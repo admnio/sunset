@@ -7,6 +7,8 @@ use Illuminate\Contracts\Cache\Repository as Cache;
 use Laravel\Horizon\Contracts\MetricsRepository;
 use Laravel\Horizon\Contracts\SupervisorRepository;
 use Laravel\Horizon\Contracts\WorkloadRepository;
+use Psr\Log\LoggerInterface;
+use Throwable;
 
 class SqsWorkloadRepository implements WorkloadRepository
 {
@@ -15,6 +17,7 @@ class SqsWorkloadRepository implements WorkloadRepository
         private MetricsRepository $metrics,
         private SupervisorRepository $supervisors,
         private Cache $cache,
+        private LoggerInterface $logger,
         private string $queuePrefix,
         private array $queues,
         private int $cacheTtlSeconds,
@@ -44,11 +47,21 @@ class SqsWorkloadRepository implements WorkloadRepository
 
         $workload = [];
         foreach ($promises as $queue => $promise) {
-            $result = $promise->wait();
-            $attrs = $result['Attributes'] ?? [];
-            $length = (int) ($attrs['ApproximateNumberOfMessages'] ?? 0);
-            $runtime = (float) $this->metrics->runtimeForQueue($queue);
             $procs = max(1, (int) $this->lookupProcessCount($queue, $perQueueProcesses));
+
+            try {
+                $result = $promise->wait();
+                $attrs = $result['Attributes'] ?? [];
+                $length = (int) ($attrs['ApproximateNumberOfMessages'] ?? 0);
+            } catch (Throwable $e) {
+                $this->logger->warning('horizon-sqs: GetQueueAttributes failed for queue', [
+                    'queue' => $queue,
+                    'error' => $e->getMessage(),
+                ]);
+                $length = 0;
+            }
+
+            $runtime = (float) $this->metrics->runtimeForQueue($queue);
 
             $workload[] = [
                 'name' => $queue,

@@ -3,6 +3,7 @@
 namespace MasonWorkforce\HorizonSqs\Queue\Delay;
 
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
+use Psr\Log\LoggerInterface;
 use Throwable;
 
 class DelayedJobReenqueuer
@@ -10,6 +11,7 @@ class DelayedJobReenqueuer
     public function __construct(
         private DelayedJobStore $store,
         private QueueFactory $queues,
+        private LoggerInterface $logger,
         private string $connectionName,
         private int $sweepIntervalSeconds,
     ) {
@@ -27,8 +29,12 @@ class DelayedJobReenqueuer
                 $delay = max(0, (int) round($entry['eta'] - $now));
                 $queue->pushRaw($entry['payload'], $entry['queue'], ['delay' => $delay]);
                 $this->store->remove($entry['member']);
-            } catch (Throwable) {
-                // leave in set for next sweep
+            } catch (Throwable $e) {
+                $this->logger->warning('horizon-sqs: failed to re-enqueue delayed job', [
+                    'queue' => $entry['queue'],
+                    'member' => $entry['member'],
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
     }

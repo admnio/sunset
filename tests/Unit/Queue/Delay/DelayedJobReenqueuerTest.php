@@ -8,6 +8,7 @@ use MasonWorkforce\HorizonSqs\Queue\Delay\DelayedJobReenqueuer;
 use MasonWorkforce\HorizonSqs\Queue\Delay\DelayedJobStore;
 use MasonWorkforce\HorizonSqs\Tests\TestCase;
 use Mockery;
+use Psr\Log\LoggerInterface;
 
 class DelayedJobReenqueuerTest extends TestCase
 {
@@ -34,7 +35,9 @@ class DelayedJobReenqueuerTest extends TestCase
         $queues = Mockery::mock(QueueFactory::class);
         $queues->shouldReceive('connection')->with('sqs')->andReturn($sqsQueue);
 
-        $reenqueuer = new DelayedJobReenqueuer($store, $queues, 'sqs', 60);
+        $logger = Mockery::spy(LoggerInterface::class);
+
+        $reenqueuer = new DelayedJobReenqueuer($store, $queues, $logger, 'sqs', 60);
         $reenqueuer->sweep($now);
     }
 
@@ -58,8 +61,12 @@ class DelayedJobReenqueuerTest extends TestCase
         $queues = Mockery::mock(QueueFactory::class);
         $queues->shouldReceive('connection')->andReturn($sqsQueue);
 
-        $reenqueuer = new DelayedJobReenqueuer($store, $queues, 'sqs', 60);
+        $logger = Mockery::spy(LoggerInterface::class);
+
+        $reenqueuer = new DelayedJobReenqueuer($store, $queues, $logger, 'sqs', 60);
         $reenqueuer->sweep($now);
+
+        $logger->shouldHaveReceived('warning')->once();
     }
 
     protected function tearDown(): void

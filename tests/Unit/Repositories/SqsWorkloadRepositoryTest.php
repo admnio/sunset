@@ -10,6 +10,7 @@ use Laravel\Horizon\Contracts\SupervisorRepository;
 use MasonWorkforce\HorizonSqs\Repositories\SqsWorkloadRepository;
 use MasonWorkforce\HorizonSqs\Tests\TestCase;
 use Mockery;
+use Psr\Log\LoggerInterface;
 
 class SqsWorkloadRepositoryTest extends TestCase
 {
@@ -51,11 +52,14 @@ class SqsWorkloadRepositoryTest extends TestCase
         $cache = Mockery::mock(Cache::class);
         $cache->shouldReceive('remember')->andReturnUsing(fn ($key, $ttl, $cb) => $cb());
 
+        $logger = Mockery::spy(LoggerInterface::class);
+
         $repo = new SqsWorkloadRepository(
             $sqs,
             $metrics,
             $supervisors,
             $cache,
+            $logger,
             'http://localhost:4566/000000000000',
             ['orders', 'default'],
             5
@@ -97,11 +101,77 @@ class SqsWorkloadRepositoryTest extends TestCase
         $cache = Mockery::mock(Cache::class);
         $cache->shouldReceive('remember')->andReturnUsing(fn ($key, $ttl, $cb) => $cb());
 
-        $repo = new SqsWorkloadRepository($sqs, $metrics, $supervisors, $cache, 'http://localhost:4566/000000000000', ['default'], 5);
+        $logger = Mockery::spy(LoggerInterface::class);
+
+        $repo = new SqsWorkloadRepository($sqs, $metrics, $supervisors, $cache, $logger, 'http://localhost:4566/000000000000', ['default'], 5);
 
         $workload = $repo->get();
 
         $this->assertSame(5, $workload[0]['wait']); // divides by max(1, processes)
+    }
+
+    public function test_logs_and_continues_when_a_queue_fails(): void
+    {
+        $sqs = Mockery::mock(SqsClient::class);
+        $sqs->shouldReceive('getQueueAttributesAsync')
+            ->andReturnUsing(function ($args) {
+                $queue = basename($args['QueueUrl']);
+                $promise = Mockery::mock(\GuzzleHttp\Promise\PromiseInterface::class);
+
+                if ($queue === 'broken') {
+                    $promise->shouldReceive('wait')->andThrow(new \RuntimeException('queue does not exist'));
+                } else {
+                    $promise->shouldReceive('wait')->andReturn(new Result([
+                        'Attributes' => [
+                            'ApproximateNumberOfMessages' => '7',
+                            'ApproximateNumberOfMessagesNotVisible' => '0',
+                        ],
+                    ]));
+                }
+
+                return $promise;
+            });
+
+        $metrics = Mockery::mock(MetricsRepository::class);
+        $metrics->shouldReceive('runtimeForQueue')->andReturn(1.0);
+
+        $supervisors = Mockery::mock(SupervisorRepository::class);
+        $supervisors->shouldReceive('all')->andReturn([
+            (object) [
+                'name' => 'supervisor-1',
+                'processes' => ['sqs:orders' => 2, 'sqs:broken' => 1],
+            ],
+        ]);
+
+        $cache = Mockery::mock(Cache::class);
+        $cache->shouldReceive('remember')->andReturnUsing(fn ($key, $ttl, $cb) => $cb());
+
+        $logger = Mockery::spy(LoggerInterface::class);
+
+        $repo = new SqsWorkloadRepository(
+            $sqs,
+            $metrics,
+            $supervisors,
+            $cache,
+            $logger,
+            'http://localhost:4566/000000000000',
+            ['orders', 'broken'],
+            5
+        );
+
+        $workload = $repo->get();
+
+        $byName = collect($workload)->keyBy('name')->all();
+
+        $this->assertArrayHasKey('orders', $byName);
+        $this->assertSame(7, $byName['orders']['length']);
+
+        $this->assertArrayHasKey('broken', $byName);
+        $this->assertSame(0, $byName['broken']['length']);
+        $this->assertSame(0, $byName['broken']['wait']);
+        $this->assertSame(1, $byName['broken']['processes']);
+
+        $logger->shouldHaveReceived('warning')->once();
     }
 
     protected function tearDown(): void
