@@ -1,0 +1,50 @@
+name: tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4']
+        laravel: ['^10.0', '^11.0', '^12.0']
+        exclude:
+          - php: '8.2'
+            laravel: '^12.0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - run: composer require "illuminate/queue:${{ matrix.laravel }}" "illuminate/support:${{ matrix.laravel }}" "illuminate/redis:${{ matrix.laravel }}" --no-update
+      - run: composer update --prefer-stable --no-interaction
+      - run: vendor/bin/phpunit --testsuite Unit
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      localstack:
+        image: localstack/localstack:3
+        ports: ['4566:4566']
+        env:
+          SERVICES: sqs,s3
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - run: composer install --no-interaction
+      - run: vendor/bin/phpunit --testsuite Integration
+        env:
+          LOCALSTACK_ENDPOINT: http://localhost:4566
+          REDIS_HOST: 127.0.0.1
