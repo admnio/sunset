@@ -15,7 +15,6 @@ class HorizonSqsConnectorTest extends TestCase
         $this->app->singleton(HorizonSqsConnector::class, function ($app) {
             return new HorizonSqsConnector(
                 container: $app,
-                enricher: $app->make(\MasonWorkforce\HorizonSqs\Queue\Payload\PayloadEnricher::class),
                 redis: $app->make(\Illuminate\Contracts\Redis\Factory::class),
                 packageConfig: config('horizon-sqs'),
             );

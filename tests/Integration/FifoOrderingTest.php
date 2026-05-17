@@ -19,9 +19,23 @@ class FifoOrderingTest extends IntegrationTestCase
     {
         $sqs = Queue::connection('sqs');
 
-        $sqs->pushRaw('{"id":"1","seq":1,"_horizon_nonce":"a1"}', 'orders.fifo');
-        $sqs->pushRaw('{"id":"2","seq":2,"_horizon_nonce":"a2"}', 'orders.fifo');
-        $sqs->pushRaw('{"id":"3","seq":3,"_horizon_nonce":"a3"}', 'orders.fifo');
+        // Pre-shape payloads with displayName so Horizon's StoreJob listener
+        // (which now fires on JobPending) can record them.
+        $payloads = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $payloads[] = json_encode([
+                'uuid' => "u{$i}",
+                'id' => (string) $i,
+                'displayName' => 'FifoOrderingJob',
+                'job' => 'Illuminate\\Queue\\CallQueuedHandler@call',
+                'data' => ['commandName' => 'FifoOrderingJob', 'command' => ''],
+                'seq' => $i,
+                '_horizon_nonce' => "a{$i}",
+            ]);
+        }
+        $sqs->pushRaw($payloads[0], 'orders.fifo');
+        $sqs->pushRaw($payloads[1], 'orders.fifo');
+        $sqs->pushRaw($payloads[2], 'orders.fifo');
 
         $received = [];
         for ($i = 0; $i < 3; $i++) {

@@ -9,14 +9,12 @@ use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Illuminate\Queue\Connectors\ConnectorInterface;
 use MasonWorkforce\HorizonSqs\Queue\Delay\DelayedJobStore;
 use MasonWorkforce\HorizonSqs\Queue\Payload\ExtendedPayloadHandler;
-use MasonWorkforce\HorizonSqs\Queue\Payload\PayloadEnricher;
 use MasonWorkforce\HorizonSqs\Support\FifoMessageAttributes;
 
 class HorizonSqsConnector implements ConnectorInterface
 {
     public function __construct(
         private Container $container,
-        private PayloadEnricher $enricher,
         private RedisFactory $redis,
         private array $packageConfig,
     ) {
@@ -28,19 +26,22 @@ class HorizonSqsConnector implements ConnectorInterface
 
         $extended = null;
         if ($this->packageConfig['extended_payload']['enabled'] ?? false) {
-            $s3Config = $this->normalizeSqsConfig($config);
-            // When an explicit endpoint is set (e.g. LocalStack, MinIO),
-            // force path-style addressing so requests target
-            // `host/bucket` instead of vhost-style `bucket.host`.
-            if (! empty($s3Config['endpoint'])) {
-                $s3Config['use_path_style_endpoint'] = true;
+            // When the container has an explicit binding (provider registered it),
+            // reuse so listener and queue share the same instance.
+            if ($this->container->bound(ExtendedPayloadHandler::class)) {
+                $extended = $this->container->make(ExtendedPayloadHandler::class);
+            } else {
+                $s3Config = $this->normalizeSqsConfig($config);
+                if (! empty($s3Config['endpoint'])) {
+                    $s3Config['use_path_style_endpoint'] = true;
+                }
+                $s3 = new S3Client($s3Config);
+                $extended = new ExtendedPayloadHandler(
+                    $s3,
+                    $this->packageConfig['extended_payload']['bucket'],
+                    $this->packageConfig['extended_payload']['prefix']
+                );
             }
-            $s3 = new S3Client($s3Config);
-            $extended = new ExtendedPayloadHandler(
-                $s3,
-                $this->packageConfig['extended_payload']['bucket'],
-                $this->packageConfig['extended_payload']['prefix']
-            );
         }
 
         return new HorizonSqsQueue(
@@ -48,7 +49,6 @@ class HorizonSqsConnector implements ConnectorInterface
             default: $config['queue'],
             prefix: $config['prefix'] ?? '',
             suffix: $config['suffix'] ?? '',
-            enricher: $this->enricher,
             fifoAttributes: new FifoMessageAttributes($this->packageConfig['fifo']),
             extendedPayload: $extended,
             delayedStore: new DelayedJobStore($this->redis, $this->packageConfig['redis_connection']),

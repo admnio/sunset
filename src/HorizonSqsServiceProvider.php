@@ -14,10 +14,11 @@ use Laravel\Horizon\Contracts\SupervisorRepository;
 use Laravel\Horizon\Contracts\WorkloadRepository;
 use MasonWorkforce\HorizonSqs\Console\SweepDelayedCommand;
 use MasonWorkforce\HorizonSqs\Exceptions\InvalidConfigurationException;
+use MasonWorkforce\HorizonSqs\Listeners\CleanupExtendedPayload;
 use MasonWorkforce\HorizonSqs\Queue\Delay\DelayedJobReenqueuer;
 use MasonWorkforce\HorizonSqs\Queue\Delay\DelayedJobStore;
 use MasonWorkforce\HorizonSqs\Queue\HorizonSqsConnector;
-use MasonWorkforce\HorizonSqs\Queue\Payload\PayloadEnricher;
+use MasonWorkforce\HorizonSqs\Queue\Payload\ExtendedPayloadHandler;
 use MasonWorkforce\HorizonSqs\Repositories\SqsWorkloadRepository;
 use Psr\Log\LoggerInterface;
 
@@ -27,14 +28,28 @@ class HorizonSqsServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/horizon-sqs.php', 'horizon-sqs');
 
-        $this->app->singleton(PayloadEnricher::class);
-
         $this->app->singleton(HorizonSqsConnector::class, function ($app) {
             return new HorizonSqsConnector(
                 container: $app,
-                enricher: $app->make(PayloadEnricher::class),
                 redis: $app->make(RedisFactory::class),
                 packageConfig: $this->validatedPackageConfig($app['config']->get('horizon-sqs')),
+            );
+        });
+
+        // Register the ExtendedPayloadHandler binding unconditionally so listener
+        // resolution works regardless of when extended_payload.enabled is set in
+        // the config (which may happen in test environments after boot).
+        $this->app->singleton(ExtendedPayloadHandler::class, function ($app) {
+            $config = $app['config']->get('horizon-sqs');
+            $queueConfig = $app['config']->get('queue.connections.sqs', []);
+            $s3Config = $this->awsConfigFor($queueConfig);
+            if (! empty($s3Config['endpoint'])) {
+                $s3Config['use_path_style_endpoint'] = true;
+            }
+            return new ExtendedPayloadHandler(
+                new \Aws\S3\S3Client($s3Config),
+                $config['extended_payload']['bucket'] ?? '',
+                $config['extended_payload']['prefix'] ?? ''
             );
         });
 
@@ -85,6 +100,17 @@ class HorizonSqsServiceProvider extends ServiceProvider
         $manager = $this->app->make('queue');
         if ($manager instanceof QueueManager) {
             $manager->addConnector('sqs', fn () => $this->app->make(HorizonSqsConnector::class));
+        }
+
+        // Clean up S3 spillover objects when a job completes successfully on the
+        // sqs connection. Listener short-circuits internally when the body is
+        // not an S3 pointer, so registering it unconditionally is safe and
+        // simplifies the test path (config can be set after register()).
+        if ($this->app['config']->get('horizon-sqs.extended_payload.enabled', false)) {
+            $this->app['events']->listen(
+                \Illuminate\Queue\Events\JobProcessed::class,
+                CleanupExtendedPayload::class
+            );
         }
 
         // Re-bind WorkloadRepository in boot() to override Horizon's own binding,
