@@ -36,4 +36,47 @@ class HorizonSqsQueue extends SqsQueue
         $payload = parent::createPayloadArray($job, $queue, $data);
         return $this->enricher->enrich($payload, $queue);
     }
+
+    public function pushRaw($payload, $queue = null, array $options = [])
+    {
+        $resolvedQueue = $queue ?: $this->default;
+        $queueUrl = $this->getQueue($queue);
+
+        if ($this->extendedPayload) {
+            $payload = $this->extendedPayload->maybeStore($payload);
+        }
+
+        $args = [
+            'QueueUrl' => $queueUrl,
+            'MessageBody' => $payload,
+        ];
+
+        if (isset($options['delay']) && $options['delay'] > 0) {
+            $args['DelaySeconds'] = (int) $options['delay'];
+        }
+
+        $args = array_merge($args, $this->fifoAttributes->for($resolvedQueue, $payload, $options));
+
+        $response = $this->sqs->sendMessage($args);
+        return $response->get('MessageId');
+    }
+
+    public function later($delay, $job, $data = '', $queue = null)
+    {
+        $resolvedQueue = $queue ?: $this->default;
+        $payload = $this->createPayload($job, $resolvedQueue, $data);
+        $delaySeconds = $this->secondsUntil($delay);
+
+        if ($delaySeconds > $this->maxNativeDelay) {
+            $this->delayedStore->buffer(
+                $resolvedQueue,
+                $payload,
+                microtime(true) + $delaySeconds
+            );
+            $decoded = json_decode($payload, true);
+            return $decoded['id'] ?? null;
+        }
+
+        return $this->pushRaw($payload, $queue, ['delay' => $delaySeconds]);
+    }
 }
