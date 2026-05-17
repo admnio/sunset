@@ -1,0 +1,39 @@
+{
+  "name": "masonworkforce/horizon-sqs",
+  "description": "Laravel Horizon support for Amazon SQS with full dashboard parity.",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": "^8.2",
+    "aws/aws-sdk-php": "^3.300",
+    "illuminate/queue": "^10.0 || ^11.0 || ^12.0",
+    "illuminate/redis": "^10.0 || ^11.0 || ^12.0",
+    "illuminate/support": "^10.0 || ^11.0 || ^12.0",
+    "laravel/horizon": "^5.20",
+    "ramsey/uuid": "^4.7"
+  },
+  "require-dev": {
+    "orchestra/testbench": "^8.0 || ^9.0 || ^10.0",
+    "phpunit/phpunit": "^10.5 || ^11.0",
+    "mockery/mockery": "^1.6"
+  },
+  "autoload": {
+    "psr-4": {
+      "MasonWorkforce\\HorizonSqs\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "MasonWorkforce\\HorizonSqs\\Tests\\": "tests/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "MasonWorkforce\\HorizonSqs\\HorizonSqsServiceProvider"
+      ]
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

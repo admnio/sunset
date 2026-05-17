@@ -1,0 +1,13 @@
+services:
+  localstack:
+    image: localstack/localstack:3
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs,s3
+      - DEBUG=0
+      - PERSISTENCE=0
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
