@@ -1,27 +1,27 @@
 <?php
 
-namespace MasonWorkforce\HorizonSqs\Tests\Integration;
+namespace Admnio\Sunset\Tests\Integration;
 
 use Aws\S3\Exception\S3Exception;
 use Aws\S3\S3Client;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
-use MasonWorkforce\HorizonSqs\Queue\HorizonSqsConnector;
+use Admnio\Sunset\Transports\Sqs\SqsConnector;
 
 class ExtendedPayloadTest extends IntegrationTestCase
 {
-    private string $bucket = 'horizon-sqs-test';
+    private string $bucket = 'sunset-test';
 
     protected function defineEnvironment($app): void
     {
         parent::defineEnvironment($app);
-        // The HorizonSqsConnector reads the package config at register() time and
+        // The SqsConnector reads the package config at register() time and
         // stores it in a private property. We must set extended_payload BEFORE
         // the connector singleton is built, so set it in defineEnvironment().
-        $app['config']->set('horizon-sqs.extended_payload.enabled', true);
-        $app['config']->set('horizon-sqs.extended_payload.bucket', $this->bucket);
-        $app['config']->set('horizon-sqs.extended_payload.prefix', 'horizon-sqs-payloads/');
+        $app['config']->set('sunset.transports.sqs.extended_payload.enabled', true);
+        $app['config']->set('sunset.transports.sqs.extended_payload.bucket', $this->bucket);
+        $app['config']->set('sunset.transports.sqs.extended_payload.prefix', 'sunset-payloads/');
     }
 
     protected function setUp(): void

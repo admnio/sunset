@@ -1,6 +1,6 @@
 <?php
 
-namespace MasonWorkforce\HorizonSqs\Tests\Fixtures\Jobs;
+namespace Admnio\Sunset\Tests\Fixtures\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -18,6 +18,6 @@ class RecordingJob implements ShouldQueue
 
     public function handle(): void
     {
-        file_put_contents(sys_get_temp_dir() . '/horizon-sqs-marker', $this->marker);
+        file_put_contents(sys_get_temp_dir() . '/sunset-marker', $this->marker);
     }
 }

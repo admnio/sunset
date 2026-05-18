@@ -1,13 +1,13 @@
 <?php
 
-namespace MasonWorkforce\HorizonSqs\Console;
+namespace Admnio\Sunset\Console;
 
 use Illuminate\Console\Command;
-use MasonWorkforce\HorizonSqs\Queue\Delay\DelayedJobReenqueuer;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobReenqueuer;
 
 class SweepDelayedCommand extends Command
 {
-    protected $signature = 'horizon-sqs:sweep-delayed';
+    protected $signature = 'sunset:sweep-delayed';
 
     protected $description = 'Push long-delayed jobs whose ETA falls within the next sweep interval back to SQS.';
 

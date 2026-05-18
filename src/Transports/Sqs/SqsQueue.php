@@ -1,20 +1,20 @@
 <?php
 
-namespace MasonWorkforce\HorizonSqs\Queue;
+namespace Admnio\Sunset\Transports\Sqs;
 
 use Aws\Sqs\SqsClient;
 use Illuminate\Contracts\Events\Dispatcher;
-use Illuminate\Queue\SqsQueue;
+use Illuminate\Queue\SqsQueue as LaravelSqsQueue;
 use Illuminate\Support\Str;
 use Laravel\Horizon\Events\JobPending;
 use Laravel\Horizon\Events\JobPushed;
 use Laravel\Horizon\Events\JobReserved;
 use Laravel\Horizon\JobPayload;
-use MasonWorkforce\HorizonSqs\Queue\Delay\DelayedJobStore;
-use MasonWorkforce\HorizonSqs\Queue\Payload\ExtendedPayloadHandler;
-use MasonWorkforce\HorizonSqs\Support\FifoMessageAttributes;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
+use Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler;
+use Admnio\Sunset\Transports\Sqs\FifoMessageAttributes;
 
-class HorizonSqsQueue extends SqsQueue
+class SqsQueue extends LaravelSqsQueue
 {
     /**
      * The last job pushed via push(); used by createPayloadArray() to drive

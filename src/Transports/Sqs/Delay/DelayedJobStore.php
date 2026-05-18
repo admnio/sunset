@@ -1,12 +1,12 @@
 <?php
 
-namespace MasonWorkforce\HorizonSqs\Queue\Delay;
+namespace Admnio\Sunset\Transports\Sqs\Delay;
 
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 
 class DelayedJobStore
 {
-    private const KEY = 'horizon-sqs:delayed';
+    private const KEY = 'sunset:delayed';
 
     public function __construct(
         private RedisFactory $redis,

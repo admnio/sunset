@@ -1,9 +1,9 @@
 <?php
 
-namespace MasonWorkforce\HorizonSqs\Tests\Integration;
+namespace Admnio\Sunset\Tests\Integration;
 
 use Illuminate\Support\Facades\Queue;
-use MasonWorkforce\HorizonSqs\Tests\Fixtures\Jobs\RecordingJob;
+use Admnio\Sunset\Tests\Fixtures\Jobs\RecordingJob;
 
 class PushPopProcessTest extends IntegrationTestCase
 {
@@ -14,7 +14,7 @@ class PushPopProcessTest extends IntegrationTestCase
         $this->deleteAllQueues();
         $url = $this->createQueue('default');
         config(['queue.connections.sqs.prefix' => str_replace('/default', '', $url)]);
-        @unlink(sys_get_temp_dir() . '/horizon-sqs-marker');
+        @unlink(sys_get_temp_dir() . '/sunset-marker');
     }
 
     public function test_roundtrip_processes_job(): void
@@ -25,7 +25,7 @@ class PushPopProcessTest extends IntegrationTestCase
         $this->assertNotNull($job);
         $job->fire();
 
-        $this->assertSame('hello', file_get_contents(sys_get_temp_dir() . '/horizon-sqs-marker'));
+        $this->assertSame('hello', file_get_contents(sys_get_temp_dir() . '/sunset-marker'));
     }
 
     public function test_pushed_payload_contains_horizon_fields(): void

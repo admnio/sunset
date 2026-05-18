@@ -1,10 +1,10 @@
 <?php
 
-namespace MasonWorkforce\HorizonSqs\Tests\Unit\Console;
+namespace Admnio\Sunset\Tests\Unit\Console;
 
-use MasonWorkforce\HorizonSqs\Console\SweepDelayedCommand;
-use MasonWorkforce\HorizonSqs\Queue\Delay\DelayedJobReenqueuer;
-use MasonWorkforce\HorizonSqs\Tests\TestCase;
+use Admnio\Sunset\Console\SweepDelayedCommand;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobReenqueuer;
+use Admnio\Sunset\Tests\TestCase;
 use Mockery;
 
 class SweepDelayedCommandTest extends TestCase
@@ -19,7 +19,7 @@ class SweepDelayedCommandTest extends TestCase
         $this->app->make(\Illuminate\Contracts\Console\Kernel::class)
             ->registerCommand(new SweepDelayedCommand());
 
-        $this->artisan('horizon-sqs:sweep-delayed')->assertSuccessful();
+        $this->artisan('sunset:sweep-delayed')->assertSuccessful();
     }
 
     protected function tearDown(): void
