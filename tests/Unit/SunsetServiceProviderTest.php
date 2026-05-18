@@ -17,7 +17,7 @@ class SunsetServiceProviderTest extends TestCase
         $resolved = $this->app->make(\Laravel\Horizon\Contracts\WorkloadRepository::class);
 
         $this->assertInstanceOf(
-            \Admnio\Sunset\Repositories\SqsWorkloadRepository::class,
+            \Admnio\Sunset\Repositories\SunsetWorkloadRepository::class,
             $resolved
         );
     }

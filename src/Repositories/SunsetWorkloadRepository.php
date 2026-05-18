@@ -2,23 +2,20 @@
 
 namespace Admnio\Sunset\Repositories;
 
-use Aws\Sqs\SqsClient;
+use Admnio\Sunset\Support\TransportRegistry;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Laravel\Horizon\Contracts\MetricsRepository;
 use Laravel\Horizon\Contracts\SupervisorRepository;
 use Laravel\Horizon\Contracts\WorkloadRepository;
-use Psr\Log\LoggerInterface;
-use Throwable;
 
-class SqsWorkloadRepository implements WorkloadRepository
+class SunsetWorkloadRepository implements WorkloadRepository
 {
     public function __construct(
-        private SqsClient $sqs,
+        private TransportRegistry $transports,
+        private string $transportName,
         private MetricsRepository $metrics,
         private SupervisorRepository $supervisors,
         private Cache $cache,
-        private LoggerInterface $logger,
-        private string $queuePrefix,
         private array $queues,
         private int $cacheTtlSeconds,
     ) {
@@ -35,44 +32,26 @@ class SqsWorkloadRepository implements WorkloadRepository
 
     private function fetch(): array
     {
+        $rawWorkload = $this->transports->get($this->transportName)->workload($this->queues);
         $perQueueProcesses = $this->processesPerQueue();
 
-        $promises = [];
-        foreach ($this->queues as $queue) {
-            $promises[$queue] = $this->sqs->getQueueAttributesAsync([
-                'QueueUrl' => rtrim($this->queuePrefix, '/') . '/' . $queue,
-                'AttributeNames' => ['ApproximateNumberOfMessages', 'ApproximateNumberOfMessagesNotVisible'],
-            ]);
-        }
-
-        $workload = [];
-        foreach ($promises as $queue => $promise) {
+        $records = [];
+        foreach ($rawWorkload as $entry) {
+            $queue = $entry['name'];
+            $length = (int) $entry['length'];
             $procs = max(1, (int) $this->lookupProcessCount($queue, $perQueueProcesses));
-
-            try {
-                $result = $promise->wait();
-                $attrs = $result['Attributes'] ?? [];
-                $length = (int) ($attrs['ApproximateNumberOfMessages'] ?? 0);
-            } catch (Throwable $e) {
-                $this->logger->warning('sunset: GetQueueAttributes failed for queue', [
-                    'queue' => $queue,
-                    'error' => $e->getMessage(),
-                ]);
-                $length = 0;
-            }
-
             $runtime = (float) $this->metrics->runtimeForQueue($queue);
 
-            $workload[] = [
+            $records[] = [
                 'name' => $queue,
                 'length' => $length,
                 'wait' => (int) round($length * $runtime / $procs),
                 'processes' => $procs,
-                'split_queues' => null,
+                'split_queues' => $entry['split_queues'] ?? null,
             ];
         }
 
-        return $workload;
+        return $records;
     }
 
     /**
@@ -101,23 +80,25 @@ class SqsWorkloadRepository implements WorkloadRepository
 
     /**
      * Find the process count for a queue, tolerant of `connection:queue` keys.
+     * When multiple connections route the same queue name, counts are summed.
      */
-    private function lookupProcessCount(string $queue, array $processesPerQueue): int
+    private function lookupProcessCount(string $queue, array $perQueue): int
     {
-        if (array_key_exists($queue, $processesPerQueue)) {
-            return (int) $processesPerQueue[$queue];
+        if (array_key_exists($queue, $perQueue)) {
+            return (int) $perQueue[$queue];
         }
 
-        foreach ($processesPerQueue as $key => $count) {
+        $total = 0;
+        foreach ($perQueue as $key => $count) {
             if (! is_string($key)) {
                 continue;
             }
             $colon = strpos($key, ':');
             if ($colon !== false && substr($key, $colon + 1) === $queue) {
-                return (int) $count;
+                $total += (int) $count;
             }
         }
 
-        return 0;
+        return $total;
     }
 }

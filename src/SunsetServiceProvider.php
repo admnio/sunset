@@ -2,7 +2,6 @@
 
 namespace Admnio\Sunset;
 
-use Aws\Sqs\SqsClient;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
@@ -21,7 +20,7 @@ use Admnio\Sunset\Support\TransportRegistry;
 use Admnio\Sunset\Transports\Sqs\SqsConnector;
 use Admnio\Sunset\Transports\Sqs\SqsTransport;
 use Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler;
-use Admnio\Sunset\Repositories\SqsWorkloadRepository;
+use Admnio\Sunset\Repositories\SunsetWorkloadRepository;
 use Psr\Log\LoggerInterface;
 
 class SunsetServiceProvider extends ServiceProvider
@@ -52,13 +51,33 @@ class SunsetServiceProvider extends ServiceProvider
         // Register the ExtendedPayloadHandler binding unconditionally so listener
         // resolution works regardless of when extended_payload.enabled is set in
         // the config (which may happen in test environments after boot).
+        //
+        // The S3 client config is inlined here rather than sharing a helper with
+        // SqsTransport::normalizeAwsConfig() — the duplication is at the
+        // boundary (one-time service wiring), not in a hot path. If it grows
+        // noisy a future cleanup can extract a small helper.
         $this->app->singleton(ExtendedPayloadHandler::class, function ($app) {
-            $sqsTransport = $app['config']->get('sunset.transports.sqs', []);
             $queueConfig = $app['config']->get('queue.connections.sqs', []);
-            $s3Config = $this->awsConfigFor($queueConfig);
-            if (! empty($s3Config['endpoint'])) {
+            $sqsTransport = $app['config']->get('sunset.transports.sqs', []);
+
+            $s3Config = [
+                'region' => $queueConfig['region'] ?? 'us-east-1',
+                'version' => 'latest',
+            ];
+            if (! empty($queueConfig['key']) && ! empty($queueConfig['secret'])) {
+                $s3Config['credentials'] = [
+                    'key' => $queueConfig['key'],
+                    'secret' => $queueConfig['secret'],
+                ];
+                if (! empty($queueConfig['token'])) {
+                    $s3Config['credentials']['token'] = $queueConfig['token'];
+                }
+            }
+            if (! empty($queueConfig['endpoint'])) {
+                $s3Config['endpoint'] = $queueConfig['endpoint'];
                 $s3Config['use_path_style_endpoint'] = true;
             }
+
             return new ExtendedPayloadHandler(
                 new \Aws\S3\S3Client($s3Config),
                 $sqsTransport['extended_payload']['bucket'] ?? '',
@@ -83,21 +102,7 @@ class SunsetServiceProvider extends ServiceProvider
             );
         });
 
-        $this->app->singleton(WorkloadRepository::class, function ($app) {
-            $connection = $app['config']->get('queue.connections.sqs');
-            $queues = $this->resolveQueueList($app);
-
-            return new SqsWorkloadRepository(
-                sqs: new SqsClient($this->awsConfigFor($connection)),
-                metrics: $app->make(MetricsRepository::class),
-                supervisors: $app->make(SupervisorRepository::class),
-                cache: $app->make(Cache::class),
-                logger: $app->make(LoggerInterface::class),
-                queuePrefix: $connection['prefix'] ?? '',
-                queues: $queues,
-                cacheTtlSeconds: (int) $app['config']->get('sunset.workload_cache_ttl', 5),
-            );
-        });
+        $this->app->singleton(WorkloadRepository::class, $this->workloadRepositoryFactory());
     }
 
     public function boot(): void
@@ -128,21 +133,7 @@ class SunsetServiceProvider extends ServiceProvider
 
         // Re-bind WorkloadRepository in boot() to override Horizon's own binding,
         // since Horizon's ServiceProvider registers after ours (alphabetical order).
-        $this->app->singleton(WorkloadRepository::class, function ($app) {
-            $connection = $app['config']->get('queue.connections.sqs');
-            $queues = $this->resolveQueueList($app);
-
-            return new SqsWorkloadRepository(
-                sqs: new SqsClient($this->awsConfigFor($connection)),
-                metrics: $app->make(MetricsRepository::class),
-                supervisors: $app->make(SupervisorRepository::class),
-                cache: $app->make(Cache::class),
-                logger: $app->make(LoggerInterface::class),
-                queuePrefix: $connection['prefix'] ?? '',
-                queues: $queues,
-                cacheTtlSeconds: (int) $app['config']->get('sunset.workload_cache_ttl', 5),
-            );
-        });
+        $this->app->singleton(WorkloadRepository::class, $this->workloadRepositoryFactory());
 
         $this->app->booted(function () {
             $schedule = $this->app->make(Schedule::class);
@@ -151,6 +142,21 @@ class SunsetServiceProvider extends ServiceProvider
                 ->withoutOverlapping()
                 ->name('sunset-sweep-delayed');
         });
+    }
+
+    private function workloadRepositoryFactory(): \Closure
+    {
+        return function ($app) {
+            return new SunsetWorkloadRepository(
+                transports: $app->make(TransportRegistry::class),
+                transportName: 'sqs',
+                metrics: $app->make(MetricsRepository::class),
+                supervisors: $app->make(SupervisorRepository::class),
+                cache: $app->make(Cache::class),
+                queues: $this->resolveQueueList($app),
+                cacheTtlSeconds: (int) $app['config']->get('sunset.workload_cache_ttl', 5),
+            );
+        };
     }
 
     private function validatedPackageConfig(array $config): array
@@ -184,23 +190,5 @@ class SunsetServiceProvider extends ServiceProvider
             }
         }
         return array_values(array_unique($queues)) ?: [$app['config']->get('queue.connections.sqs.queue', 'default')];
-    }
-
-    private function awsConfigFor(array $config): array
-    {
-        $base = ['region' => $config['region'] ?? 'us-east-1', 'version' => 'latest'];
-        if (! empty($config['key']) && ! empty($config['secret'])) {
-            $base['credentials'] = [
-                'key' => $config['key'],
-                'secret' => $config['secret'],
-            ];
-            if (! empty($config['token'])) {
-                $base['credentials']['token'] = $config['token'];
-            }
-        }
-        if (! empty($config['endpoint'])) {
-            $base['endpoint'] = $config['endpoint'];
-        }
-        return $base;
     }
 }
