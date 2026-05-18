@@ -6,3 +6,4 @@ composer.lock
 /.vscode/
 /build/
 .DS_Store
+/.superpowers/
