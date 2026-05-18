@@ -1,17 +1,17 @@
 <?php
 
-namespace Admnio\Sunset\Queue;
+namespace Admnio\Sunset\Transports\Sqs;
 
 use Aws\S3\S3Client;
 use Aws\Sqs\SqsClient;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Illuminate\Queue\Connectors\ConnectorInterface;
-use Admnio\Sunset\Queue\Delay\DelayedJobStore;
-use Admnio\Sunset\Queue\Payload\ExtendedPayloadHandler;
-use Admnio\Sunset\Support\FifoMessageAttributes;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
+use Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler;
+use Admnio\Sunset\Transports\Sqs\FifoMessageAttributes;
 
-class HorizonSqsConnector implements ConnectorInterface
+class SqsConnector implements ConnectorInterface
 {
     public function __construct(
         private Container $container,
@@ -46,7 +46,7 @@ class HorizonSqsConnector implements ConnectorInterface
             }
         }
 
-        return new HorizonSqsQueue(
+        return new SqsQueue(
             sqs: $sqs,
             default: $config['queue'],
             prefix: $config['prefix'] ?? '',

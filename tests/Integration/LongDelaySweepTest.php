@@ -4,7 +4,7 @@ namespace Admnio\Sunset\Tests\Integration;
 
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Redis;
-use Admnio\Sunset\Queue\Delay\DelayedJobReenqueuer;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobReenqueuer;
 
 class LongDelaySweepTest extends IntegrationTestCase
 {

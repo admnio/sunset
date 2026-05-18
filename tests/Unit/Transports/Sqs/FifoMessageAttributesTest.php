@@ -1,8 +1,8 @@
 <?php
 
-namespace Admnio\Sunset\Tests\Unit\Support;
+namespace Admnio\Sunset\Tests\Unit\Transports\Sqs;
 
-use Admnio\Sunset\Support\FifoMessageAttributes;
+use Admnio\Sunset\Transports\Sqs\FifoMessageAttributes;
 use Admnio\Sunset\Tests\TestCase;
 
 class FifoMessageAttributesTest extends TestCase

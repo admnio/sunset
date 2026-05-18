@@ -1,6 +1,6 @@
 <?php
 
-namespace Admnio\Sunset\Support;
+namespace Admnio\Sunset\Transports\Sqs;
 
 use InvalidArgumentException;
 

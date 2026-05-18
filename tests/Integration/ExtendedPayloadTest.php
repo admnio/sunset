@@ -7,7 +7,7 @@ use Aws\S3\S3Client;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
-use Admnio\Sunset\Queue\HorizonSqsConnector;
+use Admnio\Sunset\Transports\Sqs\SqsConnector;
 
 class ExtendedPayloadTest extends IntegrationTestCase
 {
@@ -16,7 +16,7 @@ class ExtendedPayloadTest extends IntegrationTestCase
     protected function defineEnvironment($app): void
     {
         parent::defineEnvironment($app);
-        // The HorizonSqsConnector reads the package config at register() time and
+        // The SqsConnector reads the package config at register() time and
         // stores it in a private property. We must set extended_payload BEFORE
         // the connector singleton is built, so set it in defineEnvironment().
         $app['config']->set('sunset.transports.sqs.extended_payload.enabled', true);

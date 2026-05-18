@@ -27,7 +27,7 @@ class SunsetServiceProviderTest extends TestCase
         $queue = $this->app['queue']->connection('sqs');
 
         $this->assertInstanceOf(
-            \Admnio\Sunset\Queue\HorizonSqsQueue::class,
+            \Admnio\Sunset\Transports\Sqs\SqsQueue::class,
             $queue
         );
     }
@@ -44,7 +44,7 @@ class SunsetServiceProviderTest extends TestCase
         config(['database.redis.nonexistent-connection' => null]);
 
         $this->expectException(\Admnio\Sunset\Exceptions\InvalidConfigurationException::class);
-        $this->app->make(\Admnio\Sunset\Queue\HorizonSqsConnector::class)
+        $this->app->make(\Admnio\Sunset\Transports\Sqs\SqsConnector::class)
             ->connect(config('queue.connections.sqs'));
     }
 }

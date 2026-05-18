@@ -1,6 +1,6 @@
 <?php
 
-namespace Admnio\Sunset\Queue\Delay;
+namespace Admnio\Sunset\Transports\Sqs\Delay;
 
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 

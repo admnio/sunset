@@ -1,11 +1,11 @@
 <?php
 
-namespace Admnio\Sunset\Tests\Unit\Queue\Delay;
+namespace Admnio\Sunset\Tests\Unit\Transports\Sqs\Delay;
 
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
 use Illuminate\Queue\Queue;
-use Admnio\Sunset\Queue\Delay\DelayedJobReenqueuer;
-use Admnio\Sunset\Queue\Delay\DelayedJobStore;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobReenqueuer;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
 use Admnio\Sunset\Tests\TestCase;
 use Mockery;
 use Psr\Log\LoggerInterface;

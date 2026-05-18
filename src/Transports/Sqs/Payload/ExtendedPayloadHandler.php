@@ -1,6 +1,6 @@
 <?php
 
-namespace Admnio\Sunset\Queue\Payload;
+namespace Admnio\Sunset\Transports\Sqs\Payload;
 
 use Aws\S3\Exception\S3Exception;
 use Aws\S3\S3Client;

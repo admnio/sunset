@@ -3,7 +3,7 @@
 namespace Admnio\Sunset\Console;
 
 use Illuminate\Console\Command;
-use Admnio\Sunset\Queue\Delay\DelayedJobReenqueuer;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobReenqueuer;
 
 class SweepDelayedCommand extends Command
 {

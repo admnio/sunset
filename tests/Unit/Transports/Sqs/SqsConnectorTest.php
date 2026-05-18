@@ -1,19 +1,19 @@
 <?php
 
-namespace Admnio\Sunset\Tests\Unit\Queue;
+namespace Admnio\Sunset\Tests\Unit\Transports\Sqs;
 
-use Admnio\Sunset\Queue\HorizonSqsConnector;
-use Admnio\Sunset\Queue\HorizonSqsQueue;
+use Admnio\Sunset\Transports\Sqs\SqsConnector;
+use Admnio\Sunset\Transports\Sqs\SqsQueue;
 use Admnio\Sunset\Tests\TestCase;
 
-class HorizonSqsConnectorTest extends TestCase
+class SqsConnectorTest extends TestCase
 {
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->app->singleton(HorizonSqsConnector::class, function ($app) {
-            return new HorizonSqsConnector(
+        $this->app->singleton(SqsConnector::class, function ($app) {
+            return new SqsConnector(
                 container: $app,
                 redis: $app->make(\Illuminate\Contracts\Redis\Factory::class),
                 packageConfig: config('sunset'),
@@ -23,7 +23,7 @@ class HorizonSqsConnectorTest extends TestCase
 
     public function test_connect_returns_horizon_sqs_queue(): void
     {
-        $connector = $this->app->make(HorizonSqsConnector::class);
+        $connector = $this->app->make(SqsConnector::class);
 
         $queue = $connector->connect([
             'key' => 'test',
@@ -34,6 +34,6 @@ class HorizonSqsConnectorTest extends TestCase
             'suffix' => '',
         ]);
 
-        $this->assertInstanceOf(HorizonSqsQueue::class, $queue);
+        $this->assertInstanceOf(SqsQueue::class, $queue);
     }
 }

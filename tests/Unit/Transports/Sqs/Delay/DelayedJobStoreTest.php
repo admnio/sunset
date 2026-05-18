@@ -1,10 +1,10 @@
 <?php
 
-namespace Admnio\Sunset\Tests\Unit\Queue\Delay;
+namespace Admnio\Sunset\Tests\Unit\Transports\Sqs\Delay;
 
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Illuminate\Redis\Connections\Connection as RedisConnection;
-use Admnio\Sunset\Queue\Delay\DelayedJobStore;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
 use Admnio\Sunset\Tests\TestCase;
 use Mockery;
 

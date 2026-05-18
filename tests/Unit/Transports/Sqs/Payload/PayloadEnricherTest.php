@@ -1,8 +1,8 @@
 <?php
 
-namespace Admnio\Sunset\Tests\Unit\Queue\Payload;
+namespace Admnio\Sunset\Tests\Unit\Transports\Sqs\Payload;
 
-use Admnio\Sunset\Queue\Payload\PayloadEnricher;
+use Admnio\Sunset\Transports\Sqs\Payload\PayloadEnricher;
 use Admnio\Sunset\Tests\TestCase;
 
 class PayloadEnricherTest extends TestCase

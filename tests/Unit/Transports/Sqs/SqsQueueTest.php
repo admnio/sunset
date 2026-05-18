@@ -1,20 +1,20 @@
 <?php
 
-namespace Admnio\Sunset\Tests\Unit\Queue;
+namespace Admnio\Sunset\Tests\Unit\Transports\Sqs;
 
 use Aws\Sqs\SqsClient;
 use Illuminate\Support\Facades\Event;
 use Laravel\Horizon\Events\JobPending;
 use Laravel\Horizon\Events\JobPushed;
 use Laravel\Horizon\Events\JobReserved;
-use Admnio\Sunset\Queue\Delay\DelayedJobStore;
-use Admnio\Sunset\Queue\HorizonSqsQueue;
-use Admnio\Sunset\Queue\Payload\ExtendedPayloadHandler;
-use Admnio\Sunset\Support\FifoMessageAttributes;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
+use Admnio\Sunset\Transports\Sqs\SqsQueue;
+use Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler;
+use Admnio\Sunset\Transports\Sqs\FifoMessageAttributes;
 use Admnio\Sunset\Tests\TestCase;
 use Mockery;
 
-class HorizonSqsQueueTest extends TestCase
+class SqsQueueTest extends TestCase
 {
     public function test_create_payload_includes_id_field(): void
     {
@@ -85,7 +85,7 @@ class HorizonSqsQueueTest extends TestCase
                 Mockery::on(fn ($eta) => $eta > microtime(true) + 3500)
             );
 
-        $queue = new HorizonSqsQueue(
+        $queue = new SqsQueue(
             sqs: $sqs,
             default: 'default',
             prefix: 'http://localhost:4566/000000000000',
@@ -144,7 +144,7 @@ class HorizonSqsQueueTest extends TestCase
             ->once()
             ->andReturn('{"s3PointerKey":"sunset-payloads/abc","size":300000}');
 
-        $queue = new HorizonSqsQueue(
+        $queue = new SqsQueue(
             sqs: $sqs,
             default: 'default',
             prefix: 'http://localhost:4566/000000000000',
@@ -182,7 +182,7 @@ class HorizonSqsQueueTest extends TestCase
             ->once()
             ->andReturn('{"id":"abc","tags":[]}');
 
-        $queue = new HorizonSqsQueue(
+        $queue = new SqsQueue(
             sqs: $sqs,
             default: 'default',
             prefix: 'http://localhost:4566/000000000000',
@@ -202,9 +202,9 @@ class HorizonSqsQueueTest extends TestCase
         Event::assertDispatched(JobReserved::class);
     }
 
-    private function makeQueueWithSqs(SqsClient $sqs): HorizonSqsQueue
+    private function makeQueueWithSqs(SqsClient $sqs): SqsQueue
     {
-        return new HorizonSqsQueue(
+        return new SqsQueue(
             sqs: $sqs,
             default: 'default',
             prefix: 'http://localhost:4566/000000000000',
@@ -217,9 +217,9 @@ class HorizonSqsQueueTest extends TestCase
         );
     }
 
-    private function makeQueue(): HorizonSqsQueue
+    private function makeQueue(): SqsQueue
     {
-        return new HorizonSqsQueue(
+        return new SqsQueue(
             sqs: Mockery::mock(SqsClient::class),
             default: 'default',
             prefix: 'http://localhost:4566/000000000000',

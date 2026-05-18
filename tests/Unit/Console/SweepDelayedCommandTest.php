@@ -3,7 +3,7 @@
 namespace Admnio\Sunset\Tests\Unit\Console;
 
 use Admnio\Sunset\Console\SweepDelayedCommand;
-use Admnio\Sunset\Queue\Delay\DelayedJobReenqueuer;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobReenqueuer;
 use Admnio\Sunset\Tests\TestCase;
 use Mockery;
 

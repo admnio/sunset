@@ -15,10 +15,10 @@ use Laravel\Horizon\Contracts\WorkloadRepository;
 use Admnio\Sunset\Console\SweepDelayedCommand;
 use Admnio\Sunset\Exceptions\InvalidConfigurationException;
 use Admnio\Sunset\Listeners\CleanupExtendedPayload;
-use Admnio\Sunset\Queue\Delay\DelayedJobReenqueuer;
-use Admnio\Sunset\Queue\Delay\DelayedJobStore;
-use Admnio\Sunset\Queue\HorizonSqsConnector;
-use Admnio\Sunset\Queue\Payload\ExtendedPayloadHandler;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobReenqueuer;
+use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
+use Admnio\Sunset\Transports\Sqs\SqsConnector;
+use Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler;
 use Admnio\Sunset\Repositories\SqsWorkloadRepository;
 use Psr\Log\LoggerInterface;
 
@@ -28,8 +28,8 @@ class SunsetServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/sunset.php', 'sunset');
 
-        $this->app->singleton(HorizonSqsConnector::class, function ($app) {
-            return new HorizonSqsConnector(
+        $this->app->singleton(SqsConnector::class, function ($app) {
+            return new SqsConnector(
                 container: $app,
                 redis: $app->make(RedisFactory::class),
                 packageConfig: $this->validatedPackageConfig($app['config']->get('sunset')),
@@ -99,7 +99,7 @@ class SunsetServiceProvider extends ServiceProvider
 
         $manager = $this->app->make('queue');
         if ($manager instanceof QueueManager) {
-            $manager->addConnector('sqs', fn () => $this->app->make(HorizonSqsConnector::class));
+            $manager->addConnector('sqs', fn () => $this->app->make(SqsConnector::class));
         }
 
         // Clean up S3 spillover objects when a job completes successfully on the

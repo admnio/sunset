@@ -1,6 +1,6 @@
 <?php
 
-namespace Admnio\Sunset\Queue\Payload;
+namespace Admnio\Sunset\Transports\Sqs\Payload;
 
 use Ramsey\Uuid\Uuid;
 

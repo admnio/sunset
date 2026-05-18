@@ -1,11 +1,11 @@
 <?php
 
-namespace Admnio\Sunset\Tests\Unit\Queue\Payload;
+namespace Admnio\Sunset\Tests\Unit\Transports\Sqs\Payload;
 
 use Aws\Result;
 use Aws\S3\S3Client;
 use Admnio\Sunset\Exceptions\ExtendedPayloadException;
-use Admnio\Sunset\Queue\Payload\ExtendedPayloadHandler;
+use Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler;
 use Admnio\Sunset\Tests\TestCase;
 use Mockery;
 

@@ -3,7 +3,7 @@
 namespace Admnio\Sunset\Listeners;
 
 use Illuminate\Queue\Events\JobProcessed;
-use Admnio\Sunset\Queue\Payload\ExtendedPayloadHandler;
+use Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler;
 
 class CleanupExtendedPayload
 {
@@ -19,7 +19,7 @@ class CleanupExtendedPayload
 
         $job = $event->job;
 
-        // Prefer the stashed original body (set in HorizonSqsQueue::pop) since
+        // Prefer the stashed original body (set in SqsQueue::pop) since
         // getRawBody() returns the post-fetch expanded payload, which never
         // contains the s3PointerKey field.
         $body = $event->job->getRawBody();
