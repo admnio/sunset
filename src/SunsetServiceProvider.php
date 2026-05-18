@@ -11,6 +11,7 @@ use Illuminate\Support\ServiceProvider;
 use Laravel\Horizon\Contracts\MetricsRepository;
 use Laravel\Horizon\Contracts\SupervisorRepository;
 use Laravel\Horizon\Contracts\WorkloadRepository;
+use Admnio\Sunset\Console\SunsetMigrateRedisKeysCommand;
 use Admnio\Sunset\Console\SweepDelayedCommand;
 use Admnio\Sunset\Exceptions\InvalidConfigurationException;
 use Admnio\Sunset\Listeners\CleanupExtendedPayload;
@@ -112,7 +113,10 @@ class SunsetServiceProvider extends ServiceProvider
                 __DIR__ . '/../config/sunset.php' => config_path('sunset.php'),
             ], 'sunset-config');
 
-            $this->commands([SweepDelayedCommand::class]);
+            $this->commands([
+                SunsetMigrateRedisKeysCommand::class,
+                SweepDelayedCommand::class,
+            ]);
         }
 
         $manager = $this->app->make('queue');
