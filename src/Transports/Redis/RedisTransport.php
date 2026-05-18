@@ -31,6 +31,8 @@ class RedisTransport implements Transport
             $config['connection'] ?? 'default',
             $config['retry_after'] ?? 60,
             $config['block_for'] ?? null,
+            $config['after_commit'] ?? null,
+            $config['migration_batch_size'] ?? -1,
         );
     }
 

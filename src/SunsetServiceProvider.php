@@ -168,7 +168,6 @@ class SunsetServiceProvider extends ServiceProvider
         return function ($app) {
             return new SunsetWorkloadRepository(
                 transports: $app->make(TransportRegistry::class),
-                transportName: 'sqs',
                 metrics: $app->make(MetricsRepository::class),
                 supervisors: $app->make(SupervisorRepository::class),
                 cache: $app->make(Cache::class),
