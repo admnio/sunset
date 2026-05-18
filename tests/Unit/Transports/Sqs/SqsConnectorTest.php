@@ -2,38 +2,47 @@
 
 namespace Admnio\Sunset\Tests\Unit\Transports\Sqs;
 
+use Admnio\Sunset\Contracts\Transport;
+use Admnio\Sunset\Support\TransportRegistry;
 use Admnio\Sunset\Transports\Sqs\SqsConnector;
 use Admnio\Sunset\Transports\Sqs\SqsQueue;
 use Admnio\Sunset\Tests\TestCase;
+use Mockery;
 
 class SqsConnectorTest extends TestCase
 {
-    protected function setUp(): void
+    public function test_connect_delegates_to_sqs_transport(): void
     {
-        parent::setUp();
-
-        $this->app->singleton(SqsConnector::class, function ($app) {
-            return new SqsConnector(
-                container: $app,
-                redis: $app->make(\Illuminate\Contracts\Redis\Factory::class),
-                packageConfig: config('sunset'),
-            );
-        });
-    }
-
-    public function test_connect_returns_horizon_sqs_queue(): void
-    {
-        $connector = $this->app->make(SqsConnector::class);
-
-        $queue = $connector->connect([
+        $config = [
             'key' => 'test',
             'secret' => 'test',
             'region' => 'us-east-1',
             'prefix' => 'http://localhost:4566/000000000000',
             'queue' => 'default',
             'suffix' => '',
-        ]);
+            'wait_time' => 20,
+        ];
 
-        $this->assertInstanceOf(SqsQueue::class, $queue);
+        $expected = Mockery::mock(SqsQueue::class);
+
+        $transport = Mockery::mock(Transport::class);
+        $transport->shouldReceive('name')->andReturn('sqs');
+        $transport->shouldReceive('connect')->with($config)->once()->andReturn($expected);
+
+        $registry = new TransportRegistry();
+        $registry->register($transport);
+
+        $this->app->instance(TransportRegistry::class, $registry);
+
+        $connector = $this->app->make(SqsConnector::class);
+        $queue = $connector->connect($config);
+
+        $this->assertSame($expected, $queue);
+    }
+
+    protected function tearDown(): void
+    {
+        Mockery::close();
+        parent::tearDown();
     }
 }

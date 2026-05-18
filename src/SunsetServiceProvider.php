@@ -17,7 +17,9 @@ use Admnio\Sunset\Exceptions\InvalidConfigurationException;
 use Admnio\Sunset\Listeners\CleanupExtendedPayload;
 use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobReenqueuer;
 use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
+use Admnio\Sunset\Support\TransportRegistry;
 use Admnio\Sunset\Transports\Sqs\SqsConnector;
+use Admnio\Sunset\Transports\Sqs\SqsTransport;
 use Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler;
 use Admnio\Sunset\Repositories\SqsWorkloadRepository;
 use Psr\Log\LoggerInterface;
@@ -28,12 +30,23 @@ class SunsetServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/sunset.php', 'sunset');
 
-        $this->app->singleton(SqsConnector::class, function ($app) {
-            return new SqsConnector(
+        $this->app->singleton(TransportRegistry::class, function ($app) {
+            $registry = new TransportRegistry();
+
+            $registry->register(new SqsTransport(
                 container: $app,
                 redis: $app->make(RedisFactory::class),
                 packageConfig: $this->validatedPackageConfig($app['config']->get('sunset')),
-            );
+                queuePrefix: $app['config']->get('queue.connections.sqs.prefix', ''),
+                sqsClient: null,
+                logger: $app->make(LoggerInterface::class),
+            ));
+
+            return $registry;
+        });
+
+        $this->app->singleton(SqsConnector::class, function ($app) {
+            return new SqsConnector($app->make(TransportRegistry::class));
         });
 
         // Register the ExtendedPayloadHandler binding unconditionally so listener

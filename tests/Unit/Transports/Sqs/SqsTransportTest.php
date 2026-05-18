@@ -98,6 +98,79 @@ class SqsTransportTest extends TestCase
         $this->assertSame(0, $byName['broken']['length']);
     }
 
+    public function test_connect_uses_container_bound_extended_payload_handler(): void
+    {
+        $shared = Mockery::mock(\Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler::class);
+        $this->app->instance(\Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler::class, $shared);
+
+        config([
+            'sunset.transports.sqs.extended_payload.enabled' => true,
+            'sunset.transports.sqs.extended_payload.bucket' => 'test-bucket',
+            'sunset.transports.sqs.extended_payload.prefix' => 'sunset-payloads/',
+        ]);
+
+        $transport = new SqsTransport(
+            container: $this->app,
+            redis: $this->app->make(RedisFactory::class),
+            packageConfig: config('sunset'),
+            queuePrefix: 'http://localhost:4566/000000000000',
+            sqsClient: null,
+        );
+
+        $queue = $transport->connect([
+            'key' => 'test',
+            'secret' => 'test',
+            'region' => 'us-east-1',
+            'prefix' => 'http://localhost:4566/000000000000',
+            'queue' => 'default',
+            'suffix' => '',
+        ]);
+
+        // Use reflection to peek at the private $extendedPayload property to confirm reuse.
+        $reflection = new \ReflectionClass($queue);
+        $prop = $reflection->getProperty('extendedPayload');
+        $prop->setAccessible(true);
+        $this->assertSame($shared, $prop->getValue($queue));
+    }
+
+    public function test_connect_builds_fresh_extended_payload_when_unbound(): void
+    {
+        // Drop both the binding and any resolved instance so $container->bound() returns false.
+        unset($this->app[\Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler::class]);
+        $this->app->forgetInstance(\Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler::class);
+
+        config([
+            'sunset.transports.sqs.extended_payload.enabled' => true,
+            'sunset.transports.sqs.extended_payload.bucket' => 'test-bucket',
+            'sunset.transports.sqs.extended_payload.prefix' => 'sunset-payloads/',
+        ]);
+
+        $transport = new SqsTransport(
+            container: $this->app,
+            redis: $this->app->make(RedisFactory::class),
+            packageConfig: config('sunset'),
+            queuePrefix: 'http://localhost:4566/000000000000',
+            sqsClient: null,
+        );
+
+        $queue = $transport->connect([
+            'key' => 'test',
+            'secret' => 'test',
+            'region' => 'us-east-1',
+            'prefix' => 'http://localhost:4566/000000000000',
+            'queue' => 'default',
+            'suffix' => '',
+            'endpoint' => 'http://localhost:4566',
+        ]);
+
+        $reflection = new \ReflectionClass($queue);
+        $prop = $reflection->getProperty('extendedPayload');
+        $prop->setAccessible(true);
+        $instance = $prop->getValue($queue);
+
+        $this->assertInstanceOf(\Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler::class, $instance);
+    }
+
     private function makeTransport(): SqsTransport
     {
         return new SqsTransport(

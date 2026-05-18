@@ -22,7 +22,7 @@ class SunsetServiceProviderTest extends TestCase
         );
     }
 
-    public function test_sqs_driver_resolves_to_horizon_sqs_queue(): void
+    public function test_sqs_driver_resolves_to_sqs_queue(): void
     {
         $queue = $this->app['queue']->connection('sqs');
 

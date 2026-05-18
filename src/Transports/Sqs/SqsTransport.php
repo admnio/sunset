@@ -39,15 +39,21 @@ class SqsTransport implements Transport
 
         $extended = null;
         if ($sqsConfig['extended_payload']['enabled'] ?? false) {
-            $s3Config = $this->normalizeAwsConfig($config);
-            if (! empty($s3Config['endpoint'])) {
-                $s3Config['use_path_style_endpoint'] = true;
+            // Prefer the container-bound singleton so the queue + JobProcessed
+            // listener share the same handler instance.
+            if ($this->container->bound(ExtendedPayloadHandler::class)) {
+                $extended = $this->container->make(ExtendedPayloadHandler::class);
+            } else {
+                $s3Config = $this->normalizeAwsConfig($config);
+                if (! empty($s3Config['endpoint'])) {
+                    $s3Config['use_path_style_endpoint'] = true;
+                }
+                $extended = new ExtendedPayloadHandler(
+                    new S3Client($s3Config),
+                    $sqsConfig['extended_payload']['bucket'],
+                    $sqsConfig['extended_payload']['prefix']
+                );
             }
-            $extended = new ExtendedPayloadHandler(
-                new S3Client($s3Config),
-                $sqsConfig['extended_payload']['bucket'],
-                $sqsConfig['extended_payload']['prefix']
-            );
         }
 
         return new SqsQueue(
