@@ -7,7 +7,7 @@ use Admnio\Sunset\Queue\Delay\DelayedJobReenqueuer;
 
 class SweepDelayedCommand extends Command
 {
-    protected $signature = 'horizon-sqs:sweep-delayed';
+    protected $signature = 'sunset:sweep-delayed';
 
     protected $description = 'Push long-delayed jobs whose ETA falls within the next sweep interval back to SQS.';
 

@@ -27,7 +27,7 @@ class SqsWorkloadRepository implements WorkloadRepository
     public function get(): array
     {
         return $this->cache->remember(
-            'horizon-sqs:workload',
+            'sunset:workload',
             $this->cacheTtlSeconds,
             fn () => $this->fetch()
         );
@@ -54,7 +54,7 @@ class SqsWorkloadRepository implements WorkloadRepository
                 $attrs = $result['Attributes'] ?? [];
                 $length = (int) ($attrs['ApproximateNumberOfMessages'] ?? 0);
             } catch (Throwable $e) {
-                $this->logger->warning('horizon-sqs: GetQueueAttributes failed for queue', [
+                $this->logger->warning('sunset: GetQueueAttributes failed for queue', [
                     'queue' => $queue,
                     'error' => $e->getMessage(),
                 ]);

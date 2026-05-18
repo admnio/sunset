@@ -30,7 +30,7 @@ class DelayedJobReenqueuer
                 $queue->pushRaw($entry['payload'], $entry['queue'], ['delay' => $delay]);
                 $this->store->remove($entry['member']);
             } catch (Throwable $e) {
-                $this->logger->warning('horizon-sqs: failed to re-enqueue delayed job', [
+                $this->logger->warning('sunset: failed to re-enqueue delayed job', [
                     'queue' => $entry['queue'],
                     'member' => $entry['member'],
                     'error' => $e->getMessage(),

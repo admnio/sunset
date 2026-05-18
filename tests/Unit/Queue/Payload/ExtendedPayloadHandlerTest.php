@@ -14,7 +14,7 @@ class ExtendedPayloadHandlerTest extends TestCase
     public function test_returns_payload_unchanged_when_under_threshold(): void
     {
         $s3 = Mockery::mock(S3Client::class);
-        $handler = new ExtendedPayloadHandler($s3, 'my-bucket', 'horizon-sqs-payloads/');
+        $handler = new ExtendedPayloadHandler($s3, 'my-bucket', 'sunset-payloads/');
 
         $payload = str_repeat('a', 200_000);
 
@@ -26,14 +26,14 @@ class ExtendedPayloadHandlerTest extends TestCase
         $s3 = Mockery::mock(S3Client::class);
         $s3->shouldReceive('putObject')->once()->andReturn(new Result());
 
-        $handler = new ExtendedPayloadHandler($s3, 'my-bucket', 'horizon-sqs-payloads/');
+        $handler = new ExtendedPayloadHandler($s3, 'my-bucket', 'sunset-payloads/');
         $payload = str_repeat('a', 300_000);
 
         $pointer = $handler->maybeStore($payload);
 
         $decoded = json_decode($pointer, true);
         $this->assertArrayHasKey('s3PointerKey', $decoded);
-        $this->assertStringStartsWith('horizon-sqs-payloads/', $decoded['s3PointerKey']);
+        $this->assertStringStartsWith('sunset-payloads/', $decoded['s3PointerKey']);
         $this->assertSame(300_000, $decoded['size']);
     }
 
@@ -42,11 +42,11 @@ class ExtendedPayloadHandlerTest extends TestCase
         $s3 = Mockery::mock(S3Client::class);
         $s3->shouldReceive('getObject')
             ->once()
-            ->with(Mockery::on(fn ($args) => $args['Key'] === 'horizon-sqs-payloads/abc'))
+            ->with(Mockery::on(fn ($args) => $args['Key'] === 'sunset-payloads/abc'))
             ->andReturn(new Result(['Body' => 'real-payload']));
 
-        $handler = new ExtendedPayloadHandler($s3, 'my-bucket', 'horizon-sqs-payloads/');
-        $pointer = json_encode(['s3PointerKey' => 'horizon-sqs-payloads/abc', 'size' => 300_000]);
+        $handler = new ExtendedPayloadHandler($s3, 'my-bucket', 'sunset-payloads/');
+        $pointer = json_encode(['s3PointerKey' => 'sunset-payloads/abc', 'size' => 300_000]);
 
         $this->assertSame('real-payload', $handler->maybeFetch($pointer));
     }
@@ -54,7 +54,7 @@ class ExtendedPayloadHandlerTest extends TestCase
     public function test_fetch_passes_through_non_pointer(): void
     {
         $s3 = Mockery::mock(S3Client::class);
-        $handler = new ExtendedPayloadHandler($s3, 'my-bucket', 'horizon-sqs-payloads/');
+        $handler = new ExtendedPayloadHandler($s3, 'my-bucket', 'sunset-payloads/');
 
         $this->assertSame('plain', $handler->maybeFetch('plain'));
         $this->assertSame('{"id":"abc"}', $handler->maybeFetch('{"id":"abc"}'));
@@ -65,7 +65,7 @@ class ExtendedPayloadHandlerTest extends TestCase
         $s3 = Mockery::mock(S3Client::class);
         $s3->shouldReceive('putObject')->andThrow(new \Aws\S3\Exception\S3Exception('fail', Mockery::mock(\Aws\CommandInterface::class)));
 
-        $handler = new ExtendedPayloadHandler($s3, 'my-bucket', 'horizon-sqs-payloads/');
+        $handler = new ExtendedPayloadHandler($s3, 'my-bucket', 'sunset-payloads/');
 
         $this->expectException(ExtendedPayloadException::class);
         $handler->maybeStore(str_repeat('a', 300_000));
@@ -76,11 +76,11 @@ class ExtendedPayloadHandlerTest extends TestCase
         $s3 = Mockery::mock(S3Client::class);
         $s3->shouldReceive('deleteObject')
             ->once()
-            ->with(Mockery::on(fn ($args) => $args['Key'] === 'horizon-sqs-payloads/abc'))
+            ->with(Mockery::on(fn ($args) => $args['Key'] === 'sunset-payloads/abc'))
             ->andReturn(new Result());
 
-        $handler = new ExtendedPayloadHandler($s3, 'my-bucket', 'horizon-sqs-payloads/');
-        $pointer = json_encode(['s3PointerKey' => 'horizon-sqs-payloads/abc', 'size' => 300_000]);
+        $handler = new ExtendedPayloadHandler($s3, 'my-bucket', 'sunset-payloads/');
+        $pointer = json_encode(['s3PointerKey' => 'sunset-payloads/abc', 'size' => 300_000]);
 
         $handler->deleteIfPointer($pointer);
     }

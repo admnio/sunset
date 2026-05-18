@@ -24,8 +24,10 @@ class HorizonSqsConnector implements ConnectorInterface
     {
         $sqs = new SqsClient($this->normalizeSqsConfig($config));
 
+        $sqsTransport = $this->packageConfig['transports']['sqs'] ?? [];
+
         $extended = null;
-        if ($this->packageConfig['extended_payload']['enabled'] ?? false) {
+        if ($sqsTransport['extended_payload']['enabled'] ?? false) {
             // When the container has an explicit binding (provider registered it),
             // reuse so listener and queue share the same instance.
             if ($this->container->bound(ExtendedPayloadHandler::class)) {
@@ -38,8 +40,8 @@ class HorizonSqsConnector implements ConnectorInterface
                 $s3 = new S3Client($s3Config);
                 $extended = new ExtendedPayloadHandler(
                     $s3,
-                    $this->packageConfig['extended_payload']['bucket'],
-                    $this->packageConfig['extended_payload']['prefix']
+                    $sqsTransport['extended_payload']['bucket'],
+                    $sqsTransport['extended_payload']['prefix']
                 );
             }
         }
@@ -49,10 +51,10 @@ class HorizonSqsConnector implements ConnectorInterface
             default: $config['queue'],
             prefix: $config['prefix'] ?? '',
             suffix: $config['suffix'] ?? '',
-            fifoAttributes: new FifoMessageAttributes($this->packageConfig['fifo']),
+            fifoAttributes: new FifoMessageAttributes($sqsTransport['fifo'] ?? []),
             extendedPayload: $extended,
             delayedStore: new DelayedJobStore($this->redis, $this->packageConfig['redis_connection']),
-            maxNativeDelay: (int) ($this->packageConfig['sqs_max_delay'] ?? 900),
+            maxNativeDelay: (int) ($sqsTransport['sqs_max_delay'] ?? 900),
             longPollSeconds: max(0, min(20, (int) ($config['wait_time'] ?? 20))),
         );
     }

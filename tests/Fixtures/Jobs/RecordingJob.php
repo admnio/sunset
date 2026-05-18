@@ -18,6 +18,6 @@ class RecordingJob implements ShouldQueue
 
     public function handle(): void
     {
-        file_put_contents(sys_get_temp_dir() . '/horizon-sqs-marker', $this->marker);
+        file_put_contents(sys_get_temp_dir() . '/sunset-marker', $this->marker);
     }
 }

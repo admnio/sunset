@@ -16,7 +16,7 @@ class HorizonSqsConnectorTest extends TestCase
             return new HorizonSqsConnector(
                 container: $app,
                 redis: $app->make(\Illuminate\Contracts\Redis\Factory::class),
-                packageConfig: config('horizon-sqs'),
+                packageConfig: config('sunset'),
             );
         });
     }

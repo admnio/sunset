@@ -142,7 +142,7 @@ class HorizonSqsQueueTest extends TestCase
         $extended = Mockery::mock(ExtendedPayloadHandler::class);
         $extended->shouldReceive('maybeStore')
             ->once()
-            ->andReturn('{"s3PointerKey":"horizon-sqs-payloads/abc","size":300000}');
+            ->andReturn('{"s3PointerKey":"sunset-payloads/abc","size":300000}');
 
         $queue = new HorizonSqsQueue(
             sqs: $sqs,
@@ -172,7 +172,7 @@ class HorizonSqsQueueTest extends TestCase
                 'Messages' => [[
                     'MessageId' => 'mid-1',
                     'ReceiptHandle' => 'rh-1',
-                    'Body' => '{"s3PointerKey":"horizon-sqs-payloads/abc","size":300000}',
+                    'Body' => '{"s3PointerKey":"sunset-payloads/abc","size":300000}',
                     'Attributes' => ['ApproximateReceiveCount' => 1],
                 ]],
             ]));

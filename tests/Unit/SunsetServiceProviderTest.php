@@ -8,8 +8,8 @@ class SunsetServiceProviderTest extends TestCase
 {
     public function test_publishes_config(): void
     {
-        $this->assertSame('default', config('horizon-sqs.redis_connection'));
-        $this->assertSame(5, config('horizon-sqs.workload_cache_ttl'));
+        $this->assertSame('default', config('sunset.redis_connection'));
+        $this->assertSame(5, config('sunset.workload_cache_ttl'));
     }
 
     public function test_workload_repository_binding_swapped(): void
@@ -35,12 +35,12 @@ class SunsetServiceProviderTest extends TestCase
     public function test_artisan_command_registered(): void
     {
         $commands = array_keys($this->app->make(\Illuminate\Contracts\Console\Kernel::class)->all());
-        $this->assertContains('horizon-sqs:sweep-delayed', $commands);
+        $this->assertContains('sunset:sweep-delayed', $commands);
     }
 
     public function test_validates_redis_connection_config(): void
     {
-        config(['horizon-sqs.redis_connection' => 'nonexistent-connection']);
+        config(['sunset.redis_connection' => 'nonexistent-connection']);
         config(['database.redis.nonexistent-connection' => null]);
 
         $this->expectException(\Admnio\Sunset\Exceptions\InvalidConfigurationException::class);

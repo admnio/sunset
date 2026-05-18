@@ -6,7 +6,7 @@ use Illuminate\Contracts\Redis\Factory as RedisFactory;
 
 class DelayedJobStore
 {
-    private const KEY = 'horizon-sqs:delayed';
+    private const KEY = 'sunset:delayed';
 
     public function __construct(
         private RedisFactory $redis,

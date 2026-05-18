@@ -32,6 +32,6 @@ abstract class TestCase extends Orchestra
             'port' => env('REDIS_PORT', 6379),
             'database' => 1,
         ]);
-        $app['config']->set('horizon-sqs.redis_connection', 'default');
+        $app['config']->set('sunset.redis_connection', 'default');
     }
 }

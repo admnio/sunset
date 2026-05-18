@@ -19,7 +19,7 @@ class SweepDelayedCommandTest extends TestCase
         $this->app->make(\Illuminate\Contracts\Console\Kernel::class)
             ->registerCommand(new SweepDelayedCommand());
 
-        $this->artisan('horizon-sqs:sweep-delayed')->assertSuccessful();
+        $this->artisan('sunset:sweep-delayed')->assertSuccessful();
     }
 
     protected function tearDown(): void

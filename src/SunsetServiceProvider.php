@@ -26,13 +26,13 @@ class SunsetServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->mergeConfigFrom(__DIR__ . '/../config/horizon-sqs.php', 'horizon-sqs');
+        $this->mergeConfigFrom(__DIR__ . '/../config/sunset.php', 'sunset');
 
         $this->app->singleton(HorizonSqsConnector::class, function ($app) {
             return new HorizonSqsConnector(
                 container: $app,
                 redis: $app->make(RedisFactory::class),
-                packageConfig: $this->validatedPackageConfig($app['config']->get('horizon-sqs')),
+                packageConfig: $this->validatedPackageConfig($app['config']->get('sunset')),
             );
         });
 
@@ -40,7 +40,7 @@ class SunsetServiceProvider extends ServiceProvider
         // resolution works regardless of when extended_payload.enabled is set in
         // the config (which may happen in test environments after boot).
         $this->app->singleton(ExtendedPayloadHandler::class, function ($app) {
-            $config = $app['config']->get('horizon-sqs');
+            $sqsTransport = $app['config']->get('sunset.transports.sqs', []);
             $queueConfig = $app['config']->get('queue.connections.sqs', []);
             $s3Config = $this->awsConfigFor($queueConfig);
             if (! empty($s3Config['endpoint'])) {
@@ -48,15 +48,15 @@ class SunsetServiceProvider extends ServiceProvider
             }
             return new ExtendedPayloadHandler(
                 new \Aws\S3\S3Client($s3Config),
-                $config['extended_payload']['bucket'] ?? '',
-                $config['extended_payload']['prefix'] ?? ''
+                $sqsTransport['extended_payload']['bucket'] ?? '',
+                $sqsTransport['extended_payload']['prefix'] ?? ''
             );
         });
 
         $this->app->singleton(DelayedJobStore::class, function ($app) {
             return new DelayedJobStore(
                 $app->make(RedisFactory::class),
-                $app['config']->get('horizon-sqs.redis_connection')
+                $app['config']->get('sunset.redis_connection')
             );
         });
 
@@ -66,7 +66,7 @@ class SunsetServiceProvider extends ServiceProvider
                 queues: $app->make(QueueFactory::class),
                 logger: $app->make(LoggerInterface::class),
                 connectionName: 'sqs',
-                sweepIntervalSeconds: (int) $app['config']->get('horizon-sqs.long_delay_sweep_interval', 60),
+                sweepIntervalSeconds: (int) $app['config']->get('sunset.transports.sqs.long_delay_sweep_interval', 60),
             );
         });
 
@@ -82,7 +82,7 @@ class SunsetServiceProvider extends ServiceProvider
                 logger: $app->make(LoggerInterface::class),
                 queuePrefix: $connection['prefix'] ?? '',
                 queues: $queues,
-                cacheTtlSeconds: (int) $app['config']->get('horizon-sqs.workload_cache_ttl', 5),
+                cacheTtlSeconds: (int) $app['config']->get('sunset.workload_cache_ttl', 5),
             );
         });
     }
@@ -91,8 +91,8 @@ class SunsetServiceProvider extends ServiceProvider
     {
         if ($this->app->runningInConsole()) {
             $this->publishes([
-                __DIR__ . '/../config/horizon-sqs.php' => config_path('horizon-sqs.php'),
-            ], 'horizon-sqs-config');
+                __DIR__ . '/../config/sunset.php' => config_path('sunset.php'),
+            ], 'sunset-config');
 
             $this->commands([SweepDelayedCommand::class]);
         }
@@ -106,7 +106,7 @@ class SunsetServiceProvider extends ServiceProvider
         // sqs connection. Listener short-circuits internally when the body is
         // not an S3 pointer, so registering it unconditionally is safe and
         // simplifies the test path (config can be set after register()).
-        if ($this->app['config']->get('horizon-sqs.extended_payload.enabled', false)) {
+        if ($this->app['config']->get('sunset.transports.sqs.extended_payload.enabled', false)) {
             $this->app['events']->listen(
                 \Illuminate\Queue\Events\JobProcessed::class,
                 CleanupExtendedPayload::class
@@ -127,16 +127,16 @@ class SunsetServiceProvider extends ServiceProvider
                 logger: $app->make(LoggerInterface::class),
                 queuePrefix: $connection['prefix'] ?? '',
                 queues: $queues,
-                cacheTtlSeconds: (int) $app['config']->get('horizon-sqs.workload_cache_ttl', 5),
+                cacheTtlSeconds: (int) $app['config']->get('sunset.workload_cache_ttl', 5),
             );
         });
 
         $this->app->booted(function () {
             $schedule = $this->app->make(Schedule::class);
-            $schedule->command('horizon-sqs:sweep-delayed')
+            $schedule->command('sunset:sweep-delayed')
                 ->everyMinute()
                 ->withoutOverlapping()
-                ->name('horizon-sqs-sweep-delayed');
+                ->name('sunset-sweep-delayed');
         });
     }
 
@@ -145,13 +145,15 @@ class SunsetServiceProvider extends ServiceProvider
         $redisConn = $config['redis_connection'] ?? null;
         if (! $redisConn || ! $this->app['config']->get("database.redis.{$redisConn}")) {
             throw new InvalidConfigurationException(
-                "horizon-sqs.redis_connection '{$redisConn}' is not defined in database.redis."
+                "Sunset: redis_connection '{$redisConn}' is not defined in database.redis."
             );
         }
 
-        if (($config['extended_payload']['enabled'] ?? false) && empty($config['extended_payload']['bucket'])) {
+        $sqsTransportConfig = $config['transports']['sqs'] ?? [];
+        if (($sqsTransportConfig['extended_payload']['enabled'] ?? false)
+            && empty($sqsTransportConfig['extended_payload']['bucket'])) {
             throw new InvalidConfigurationException(
-                'horizon-sqs.extended_payload.enabled is true but no bucket is configured.'
+                'Sunset: transports.sqs.extended_payload.enabled is true but no bucket is configured.'
             );
         }
 

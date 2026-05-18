@@ -15,7 +15,7 @@ class DelayedJobStoreTest extends TestCase
         $conn = Mockery::mock(RedisConnection::class);
         $conn->shouldReceive('zadd')
             ->once()
-            ->with('horizon-sqs:delayed', 1_700_000_000, Mockery::pattern('/^orders\\|.*\\|\\{"id":"abc"\\}$/'))
+            ->with('sunset:delayed', 1_700_000_000, Mockery::pattern('/^orders\\|.*\\|\\{"id":"abc"\\}$/'))
             ->andReturn(1);
 
         $factory = Mockery::mock(RedisFactory::class);
@@ -30,7 +30,7 @@ class DelayedJobStoreTest extends TestCase
         $conn = Mockery::mock(RedisConnection::class);
         $conn->shouldReceive('zrangebyscore')
             ->once()
-            ->with('horizon-sqs:delayed', '-inf', 1_700_000_060, ['withscores' => true])
+            ->with('sunset:delayed', '-inf', 1_700_000_060, ['withscores' => true])
             ->andReturn([
                 'orders|nonce1|{"id":"a"}' => 1_700_000_010,
                 'orders|nonce2|{"id":"b"}' => 1_700_000_050,
@@ -53,7 +53,7 @@ class DelayedJobStoreTest extends TestCase
         $conn = Mockery::mock(RedisConnection::class);
         $conn->shouldReceive('zrem')
             ->once()
-            ->with('horizon-sqs:delayed', 'orders|nonce|{"id":"a"}')
+            ->with('sunset:delayed', 'orders|nonce|{"id":"a"}')
             ->andReturn(1);
 
         $factory = Mockery::mock(RedisFactory::class);

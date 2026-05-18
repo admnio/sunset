@@ -11,7 +11,7 @@ use Admnio\Sunset\Queue\HorizonSqsConnector;
 
 class ExtendedPayloadTest extends IntegrationTestCase
 {
-    private string $bucket = 'horizon-sqs-test';
+    private string $bucket = 'sunset-test';
 
     protected function defineEnvironment($app): void
     {
@@ -19,9 +19,9 @@ class ExtendedPayloadTest extends IntegrationTestCase
         // The HorizonSqsConnector reads the package config at register() time and
         // stores it in a private property. We must set extended_payload BEFORE
         // the connector singleton is built, so set it in defineEnvironment().
-        $app['config']->set('horizon-sqs.extended_payload.enabled', true);
-        $app['config']->set('horizon-sqs.extended_payload.bucket', $this->bucket);
-        $app['config']->set('horizon-sqs.extended_payload.prefix', 'horizon-sqs-payloads/');
+        $app['config']->set('sunset.transports.sqs.extended_payload.enabled', true);
+        $app['config']->set('sunset.transports.sqs.extended_payload.bucket', $this->bucket);
+        $app['config']->set('sunset.transports.sqs.extended_payload.prefix', 'sunset-payloads/');
     }
 
     protected function setUp(): void
