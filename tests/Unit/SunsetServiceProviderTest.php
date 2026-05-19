@@ -6,6 +6,24 @@ use Admnio\Sunset\Tests\TestCase;
 
 class SunsetServiceProviderTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Illuminate\Queue\Worker requires a `callable $isDownForMaintenance`
+        // parameter that the container cannot auto-resolve. Bind it explicitly
+        // so that tests calling $artisan->all() can resolve commands that
+        // extend Laravel's built-in WorkCommand (e.g. SunsetWorkerCommand).
+        $this->app->singleton(\Illuminate\Queue\Worker::class, function ($app) {
+            return new \Illuminate\Queue\Worker(
+                $app->make(\Illuminate\Contracts\Queue\Factory::class),
+                $app->make(\Illuminate\Contracts\Events\Dispatcher::class),
+                $app->make(\Illuminate\Contracts\Debug\ExceptionHandler::class),
+                fn () => $app->isDownForMaintenance(),
+            );
+        });
+    }
+
     public function test_publishes_config(): void
     {
         $this->assertSame('default', config('sunset.redis_connection'));
@@ -150,5 +168,75 @@ class SunsetServiceProviderTest extends TestCase
         $snapshot = $events->first(fn ($e) => $e->description === 'sunset-snapshot');
         $this->assertNotNull($snapshot, 'sunset-snapshot should be scheduled');
         $this->assertSame('*/5 * * * *', $snapshot->expression);
+    }
+
+    public function test_sunset_supervisor_contracts_resolve_to_redis_implementations(): void
+    {
+        $this->assertInstanceOf(
+            \Admnio\Sunset\Repositories\Redis\RedisMasterSupervisorRepository::class,
+            $this->app->make(\Admnio\Sunset\Contracts\MasterSupervisorRepository::class)
+        );
+        $this->assertInstanceOf(
+            \Admnio\Sunset\Repositories\Redis\RedisSupervisorRepository::class,
+            $this->app->make(\Admnio\Sunset\Contracts\SupervisorRepository::class)
+        );
+        $this->assertInstanceOf(
+            \Admnio\Sunset\Repositories\Redis\RedisProcessRepository::class,
+            $this->app->make(\Admnio\Sunset\Contracts\ProcessRepository::class)
+        );
+        $this->assertInstanceOf(
+            \Admnio\Sunset\Repositories\Redis\RedisSupervisorCommandQueue::class,
+            $this->app->make(\Admnio\Sunset\Contracts\SupervisorCommandQueue::class)
+        );
+    }
+
+    public function test_horizon_supervisor_contracts_resolve_to_sunset_adapters(): void
+    {
+        $this->assertInstanceOf(
+            \Admnio\Sunset\Adapters\Horizon\HorizonMasterSupervisorRepositoryAdapter::class,
+            $this->app->make(\Laravel\Horizon\Contracts\MasterSupervisorRepository::class)
+        );
+        $this->assertInstanceOf(
+            \Admnio\Sunset\Adapters\Horizon\HorizonSupervisorRepositoryAdapter::class,
+            $this->app->make(\Laravel\Horizon\Contracts\SupervisorRepository::class)
+        );
+        $this->assertInstanceOf(
+            \Admnio\Sunset\Adapters\Horizon\HorizonProcessRepositoryAdapter::class,
+            $this->app->make(\Laravel\Horizon\Contracts\ProcessRepository::class)
+        );
+        $this->assertInstanceOf(
+            \Admnio\Sunset\Adapters\Horizon\HorizonSupervisorCommandQueueAdapter::class,
+            $this->app->make(\Laravel\Horizon\Contracts\HorizonCommandQueue::class)
+        );
+    }
+
+    public function test_all_19_v050_commands_are_registered(): void
+    {
+        $artisan = $this->app[\Illuminate\Contracts\Console\Kernel::class];
+        $expected = [
+            'sunset:work', 'sunset:supervise', 'sunset:worker',
+            'sunset:pause', 'sunset:continue',
+            'sunset:pause-supervisor', 'sunset:continue-supervisor',
+            'sunset:status', 'sunset:supervisors', 'sunset:supervisor-status',
+            'sunset:terminate',
+            'sunset:clear', 'sunset:purge', 'sunset:snapshot', 'sunset:forget-failed',
+            'sunset:install', 'sunset:publish',
+            'sunset:migrate-horizon-config',
+        ];
+        $registered = array_keys($artisan->all());
+        foreach ($expected as $cmd) {
+            $this->assertContains($cmd, $registered, "Expected {$cmd} to be registered");
+        }
+    }
+
+    public function test_horizon_artisan_command_is_overridden_by_sunset_stub(): void
+    {
+        $artisan = $this->app[\Illuminate\Contracts\Console\Kernel::class];
+        $all = $artisan->all();
+        $this->assertArrayHasKey('horizon', $all);
+        $this->assertInstanceOf(
+            \Admnio\Sunset\Console\SunsetHorizonRemovedCommand::class,
+            $all['horizon']
+        );
     }
 }
