@@ -14,13 +14,44 @@ use Laravel\Horizon\Contracts\WorkloadRepository;
 use Admnio\Sunset\Adapters\Horizon\HorizonJobRepositoryAdapter;
 use Admnio\Sunset\Adapters\Horizon\HorizonTagRepositoryAdapter;
 use Admnio\Sunset\Adapters\Horizon\HorizonMetricsRepositoryAdapter;
+use Admnio\Sunset\Adapters\Horizon\HorizonMasterSupervisorRepositoryAdapter;
+use Admnio\Sunset\Adapters\Horizon\HorizonSupervisorRepositoryAdapter;
+use Admnio\Sunset\Adapters\Horizon\HorizonProcessRepositoryAdapter;
+use Admnio\Sunset\Adapters\Horizon\HorizonSupervisorCommandQueueAdapter;
 use Admnio\Sunset\Console\SunsetMigrateHorizonKeysCommand;
 use Admnio\Sunset\Console\SunsetMigrateRedisKeysCommand;
 use Admnio\Sunset\Console\SweepDelayedCommand;
+use Admnio\Sunset\Console\SunsetWorkCommand;
+use Admnio\Sunset\Console\SunsetSuperviseCommand;
+use Admnio\Sunset\Console\SunsetWorkerCommand;
+use Admnio\Sunset\Console\SunsetPauseCommand;
+use Admnio\Sunset\Console\SunsetContinueCommand;
+use Admnio\Sunset\Console\SunsetPauseSupervisorCommand;
+use Admnio\Sunset\Console\SunsetContinueSupervisorCommand;
+use Admnio\Sunset\Console\SunsetStatusCommand;
+use Admnio\Sunset\Console\SunsetSupervisorsCommand;
+use Admnio\Sunset\Console\SunsetSupervisorStatusCommand;
+use Admnio\Sunset\Console\SunsetTerminateCommand;
+use Admnio\Sunset\Console\SunsetClearCommand;
+use Admnio\Sunset\Console\SunsetPurgeCommand;
+use Admnio\Sunset\Console\SunsetSnapshotCommand;
+use Admnio\Sunset\Console\SunsetForgetFailedCommand;
+use Admnio\Sunset\Console\SunsetInstallCommand;
+use Admnio\Sunset\Console\SunsetPublishCommand;
+use Admnio\Sunset\Console\SunsetMigrateHorizonConfigCommand;
+use Admnio\Sunset\Console\SunsetHorizonRemovedCommand;
 use Admnio\Sunset\Contracts\JobRepository as SunsetJobRepository;
 use Admnio\Sunset\Contracts\FailedJobRepository as SunsetFailedJobRepository;
 use Admnio\Sunset\Contracts\TagRepository as SunsetTagRepository;
 use Admnio\Sunset\Contracts\MetricsRepository as SunsetMetricsRepository;
+use Admnio\Sunset\Contracts\MasterSupervisorRepository as SunsetMasterSupervisorRepository;
+use Admnio\Sunset\Contracts\SupervisorRepository as SunsetSupervisorRepository;
+use Admnio\Sunset\Contracts\ProcessRepository as SunsetProcessRepository;
+use Admnio\Sunset\Contracts\SupervisorCommandQueue as SunsetSupervisorCommandQueue;
+use Admnio\Sunset\Repositories\Redis\RedisMasterSupervisorRepository;
+use Admnio\Sunset\Repositories\Redis\RedisSupervisorRepository;
+use Admnio\Sunset\Repositories\Redis\RedisProcessRepository;
+use Admnio\Sunset\Repositories\Redis\RedisSupervisorCommandQueue;
 use Admnio\Sunset\Events\JobQueueing;
 use Admnio\Sunset\Events\JobQueued;
 use Admnio\Sunset\Events\JobReserved;
@@ -150,10 +181,19 @@ class SunsetServiceProvider extends ServiceProvider
         $this->app->singleton(SunsetTagRepository::class, RedisTagRepository::class);
         $this->app->singleton(SunsetMetricsRepository::class, RedisMetricsRepository::class);
 
+        // v0.5.0: Bind Sunset supervisor contracts to Redis implementations.
+        $this->app->singleton(SunsetMasterSupervisorRepository::class, RedisMasterSupervisorRepository::class);
+        $this->app->singleton(SunsetSupervisorRepository::class, RedisSupervisorRepository::class);
+        $this->app->singleton(SunsetProcessRepository::class, RedisProcessRepository::class);
+        $this->app->singleton(SunsetSupervisorCommandQueue::class, RedisSupervisorCommandQueue::class);
+
         // Bind Horizon contracts to our adapters (initial binding in register()).
         // These will be re-bound in boot() to win against Horizon's own register()
         // which runs after ours and overwrites these.
         $this->bindHorizonAdapters();
+
+        // v0.5.0: Bind Horizon supervisor contracts to Sunset adapters (initial binding).
+        $this->bindSupervisorAdapters();
     }
 
     public function boot(): void
@@ -164,9 +204,45 @@ class SunsetServiceProvider extends ServiceProvider
             ], 'sunset-config');
 
             $this->commands([
+                // v0.4.0:
                 SunsetMigrateRedisKeysCommand::class,
                 SweepDelayedCommand::class,
                 SunsetMigrateHorizonKeysCommand::class,
+
+                // v0.5.0 process tree:
+                SunsetWorkCommand::class,
+                SunsetSuperviseCommand::class,
+                SunsetWorkerCommand::class,
+
+                // v0.5.0 control:
+                SunsetPauseCommand::class,
+                SunsetContinueCommand::class,
+                SunsetPauseSupervisorCommand::class,
+                SunsetContinueSupervisorCommand::class,
+
+                // v0.5.0 status:
+                SunsetStatusCommand::class,
+                SunsetSupervisorsCommand::class,
+                SunsetSupervisorStatusCommand::class,
+
+                // v0.5.0 terminate:
+                SunsetTerminateCommand::class,
+
+                // v0.5.0 maintenance:
+                SunsetClearCommand::class,
+                SunsetPurgeCommand::class,
+                SunsetSnapshotCommand::class,
+                SunsetForgetFailedCommand::class,
+
+                // v0.5.0 operator:
+                SunsetInstallCommand::class,
+                SunsetPublishCommand::class,
+
+                // v0.5.0 migration:
+                SunsetMigrateHorizonConfigCommand::class,
+
+                // v0.5.0 horizon stub (override):
+                SunsetHorizonRemovedCommand::class,
             ]);
         }
 
@@ -196,6 +272,9 @@ class SunsetServiceProvider extends ServiceProvider
         // Re-bind Horizon adapters in boot() to win against Horizon's own register(),
         // which runs after ours and would otherwise overwrite our bindings.
         $this->bindHorizonAdapters();
+
+        // v0.5.0: Re-bind Horizon supervisor adapters in boot() for the same reason.
+        $this->bindSupervisorAdapters();
 
         // Register Sunset event → listener map.
         $events = $this->app['events'];
@@ -227,14 +306,11 @@ class SunsetServiceProvider extends ServiceProvider
                 ->withoutOverlapping()
                 ->name('sunset-sweep-delayed');
 
-            // Schedule MetricsRepository snapshot every 5 minutes.
-            // Note: ->name() must come before ->withoutOverlapping() for CallbackEvent.
-            $schedule->call(function () {
-                app(SunsetMetricsRepository::class)->snapshot();
-            })
-            ->everyFiveMinutes()
-            ->name('sunset-snapshot')
-            ->withoutOverlapping();
+            // Schedule metrics snapshot every 5 minutes via the dedicated command.
+            $schedule->command('sunset:snapshot')
+                ->everyFiveMinutes()
+                ->name('sunset-snapshot')
+                ->withoutOverlapping();
 
             // Forget any Horizon listeners that may have registered on Sunset
             // events, then re-register our own listeners.
@@ -245,6 +321,51 @@ class SunsetServiceProvider extends ServiceProvider
                 }
             }
         });
+
+        // v0.5.0: Override Horizon's `horizon` artisan command with our stub.
+        // We use booted() so this runs after HorizonServiceProvider::boot() has
+        // registered Horizon's own `horizon` command; our add() call overwrites it.
+        $this->app->booted(function () {
+            if (! $this->app->runningInConsole()) {
+                return;
+            }
+            \Illuminate\Console\Application::starting(function ($artisan) {
+                $artisan->add(
+                    $this->app->make(\Admnio\Sunset\Console\SunsetHorizonRemovedCommand::class)
+                );
+            });
+        });
+    }
+
+    private function bindSupervisorAdapters(): void
+    {
+        $this->app->singleton(
+            \Laravel\Horizon\Contracts\MasterSupervisorRepository::class,
+            fn ($app) => new HorizonMasterSupervisorRepositoryAdapter(
+                $app->make(SunsetMasterSupervisorRepository::class)
+            )
+        );
+
+        $this->app->singleton(
+            \Laravel\Horizon\Contracts\SupervisorRepository::class,
+            fn ($app) => new HorizonSupervisorRepositoryAdapter(
+                $app->make(SunsetSupervisorRepository::class)
+            )
+        );
+
+        $this->app->singleton(
+            \Laravel\Horizon\Contracts\ProcessRepository::class,
+            fn ($app) => new HorizonProcessRepositoryAdapter(
+                $app->make(SunsetProcessRepository::class)
+            )
+        );
+
+        $this->app->singleton(
+            \Laravel\Horizon\Contracts\HorizonCommandQueue::class,
+            fn ($app) => new HorizonSupervisorCommandQueueAdapter(
+                $app->make(SunsetSupervisorCommandQueue::class)
+            )
+        );
     }
 
     private function bindHorizonAdapters(): void
