@@ -55,6 +55,13 @@ class RedisMetricsRepositoryTest extends TestCase
         $this->assertNotEmpty($queueSnaps);
         $this->assertArrayHasKey('time', $jobSnaps[0]);
         $this->assertArrayHasKey('throughput', $jobSnaps[0]);
+
+        // Snapshot content should reflect the data pushed before snapshot.
+        $this->assertSame(1, $jobSnaps[0]['throughput']);
+        $this->assertEqualsWithDelta(1.5, $jobSnaps[0]['runtime'], 0.01);
+
+        // After snapshot, interval counters reset to zero.
+        $this->assertSame(0, $this->repo->throughputForJob('JobA'));
     }
 
     public function test_latest_snapshot_at_returns_zero_before_any_snapshot(): void
