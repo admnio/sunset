@@ -43,8 +43,10 @@ class RedisTagRepository implements TagRepository
                 $pipe->zadd($this->key("tag:{$tag}"), $time, $jobId);
                 $pipe->expireat($this->key("tag:{$tag}"), $expiresAt);
             }
-            $pipe->sadd($this->key("job:{$jobId}:tags"), ...$tags);
-            $pipe->expireat($this->key("job:{$jobId}:tags"), $expiresAt);
+            if (! empty($tags)) {
+                $pipe->sadd($this->key("job:{$jobId}:tags"), ...$tags);
+                $pipe->expireat($this->key("job:{$jobId}:tags"), $expiresAt);
+            }
         });
     }
 

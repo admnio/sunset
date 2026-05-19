@@ -82,6 +82,14 @@ class RedisTagRepositoryTest extends TestCase
         $this->assertFalse($this->repo->isMonitoring('vip'));
     }
 
+    public function test_add_temporary_with_empty_tags_is_a_noop(): void
+    {
+        // Should not throw a Redis protocol error.
+        $this->repo->addTemporary(time() + 60, 'job-empty', []);
+
+        $this->assertSame([], $this->redis->smembers('sunset:job:job-empty:tags'));
+    }
+
     public function test_forget_removes_tag_index_and_clears_per_job_back_references(): void
     {
         $this->repo->addPermanent('a', ['gone']);
