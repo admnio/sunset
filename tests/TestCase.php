@@ -17,6 +17,19 @@ abstract class TestCase extends Orchestra
 
     protected function defineEnvironment($app): void
     {
+        // Illuminate\Queue\Worker requires a `callable $isDownForMaintenance`
+        // constructor parameter that the container cannot auto-resolve. Bind it
+        // explicitly so that any test bootstrapping Artisan commands that extend
+        // Laravel's built-in WorkCommand (e.g. SunsetWorkerCommand) can resolve.
+        $app->singleton(\Illuminate\Queue\Worker::class, function ($app) {
+            return new \Illuminate\Queue\Worker(
+                $app->make(\Illuminate\Contracts\Queue\Factory::class),
+                $app->make(\Illuminate\Contracts\Events\Dispatcher::class),
+                $app->make(\Illuminate\Contracts\Debug\ExceptionHandler::class),
+                fn () => $app->isDownForMaintenance(),
+            );
+        });
+
         $app['config']->set('queue.default', 'sqs');
         $app['config']->set('queue.connections.sqs', [
             'driver' => 'sqs',

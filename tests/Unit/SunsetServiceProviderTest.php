@@ -6,24 +6,6 @@ use Admnio\Sunset\Tests\TestCase;
 
 class SunsetServiceProviderTest extends TestCase
 {
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        // Illuminate\Queue\Worker requires a `callable $isDownForMaintenance`
-        // parameter that the container cannot auto-resolve. Bind it explicitly
-        // so that tests calling $artisan->all() can resolve commands that
-        // extend Laravel's built-in WorkCommand (e.g. SunsetWorkerCommand).
-        $this->app->singleton(\Illuminate\Queue\Worker::class, function ($app) {
-            return new \Illuminate\Queue\Worker(
-                $app->make(\Illuminate\Contracts\Queue\Factory::class),
-                $app->make(\Illuminate\Contracts\Events\Dispatcher::class),
-                $app->make(\Illuminate\Contracts\Debug\ExceptionHandler::class),
-                fn () => $app->isDownForMaintenance(),
-            );
-        });
-    }
-
     public function test_publishes_config(): void
     {
         $this->assertSame('default', config('sunset.redis_connection'));
