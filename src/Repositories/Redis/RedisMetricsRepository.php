@@ -113,6 +113,12 @@ class RedisMetricsRepository implements MetricsRepository
         return (int) ($this->connection()->get($this->key('last_snapshot_at')) ?? 0);
     }
 
+    public function acquireWaitTimeLock(int $ttlSeconds = 60): bool
+    {
+        $result = $this->connection()->set($this->key('wait-time-lock'), '1', 'EX', $ttlSeconds, 'NX');
+        return $result === true || $result === 'OK';
+    }
+
     private function writeSnapshot(string $snapshotKey, string $metricsKey, int $time): void
     {
         $conn = $this->connection();

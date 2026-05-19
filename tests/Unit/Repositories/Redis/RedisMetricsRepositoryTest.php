@@ -101,4 +101,15 @@ class RedisMetricsRepositoryTest extends TestCase
         $this->assertSame('15', $waits['sqs:default'] ?? null);
         $this->assertSame('30', $waits['redis:high'] ?? null);
     }
+
+    public function test_acquire_wait_time_lock_is_idempotent_within_ttl(): void
+    {
+        $first = $this->repo->acquireWaitTimeLock(60);
+        $second = $this->repo->acquireWaitTimeLock(60);
+
+        $this->assertTrue($first);
+        $this->assertFalse($second);
+
+        $this->redis->del('sunset:wait-time-lock');
+    }
 }

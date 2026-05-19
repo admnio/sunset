@@ -8,6 +8,11 @@ use Illuminate\Events\CallQueuedListener;
 use Illuminate\Mail\SendQueuedMailable;
 use Illuminate\Notifications\SendQueuedNotifications;
 use Illuminate\Support\Arr;
+// NOTE: `Laravel\Horizon\Tags` and `Laravel\Horizon\Contracts\Silenced` are
+// intentionally imported here for internal helper-method use. They are NOT
+// part of Sunset's public API surface. When v1.0.0 drops the laravel/horizon
+// dep, port `Tags::for()` into Admnio\Sunset\Tags and define our own Silenced
+// marker interface in Admnio\Sunset\Contracts.
 use Laravel\Horizon\Contracts\Silenced;
 use Laravel\Horizon\Tags;
 

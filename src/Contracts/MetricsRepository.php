@@ -31,4 +31,6 @@ interface MetricsRepository
     public function snapshot(): void;
 
     public function latestSnapshotAt(): int;
+
+    public function acquireWaitTimeLock(int $ttlSeconds = 60): bool;
 }

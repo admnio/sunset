@@ -5,7 +5,6 @@ namespace Admnio\Sunset\Tests\Unit\Adapters\Horizon;
 use Admnio\Sunset\Adapters\Horizon\HorizonMetricsRepositoryAdapter;
 use Admnio\Sunset\Contracts\MetricsRepository as SunsetMetricsRepo;
 use Admnio\Sunset\Tests\TestCase;
-use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Mockery;
 
 class HorizonMetricsRepositoryAdapterTest extends TestCase
@@ -16,7 +15,7 @@ class HorizonMetricsRepositoryAdapterTest extends TestCase
         $metrics->shouldReceive('jobs')->andReturn(['JobA', 'JobB']);
         $metrics->shouldReceive('queues')->andReturn(['q1', 'q2']);
 
-        $adapter = new HorizonMetricsRepositoryAdapter($metrics, $this->app->make(RedisFactory::class));
+        $adapter = new HorizonMetricsRepositoryAdapter($metrics);
 
         $this->assertSame(['JobA', 'JobB'], $adapter->measuredJobs());
         $this->assertSame(['q1', 'q2'], $adapter->measuredQueues());
@@ -28,7 +27,7 @@ class HorizonMetricsRepositoryAdapterTest extends TestCase
         $metrics->shouldReceive('incrementThroughput')->once()
             ->with('JobA', 'q1', 2.5);
 
-        $adapter = new HorizonMetricsRepositoryAdapter($metrics, $this->app->make(RedisFactory::class));
+        $adapter = new HorizonMetricsRepositoryAdapter($metrics);
         $adapter->incrementJob('JobA', 2.5);
         $adapter->incrementQueue('q1', 2.5);
     }
@@ -40,7 +39,7 @@ class HorizonMetricsRepositoryAdapterTest extends TestCase
         $metrics->shouldReceive('throughputForJob')->with('A')->andReturn(3);
         $metrics->shouldReceive('throughputForJob')->with('B')->andReturn(4);
 
-        $adapter = new HorizonMetricsRepositoryAdapter($metrics, $this->app->make(RedisFactory::class));
+        $adapter = new HorizonMetricsRepositoryAdapter($metrics);
         $this->assertSame(7, $adapter->throughput());
     }
 
@@ -52,22 +51,17 @@ class HorizonMetricsRepositoryAdapterTest extends TestCase
         $metrics->shouldReceive('throughputForQueue')->with('q2')->andReturn(20);
         $metrics->shouldReceive('throughputForQueue')->with('q3')->andReturn(2);
 
-        $adapter = new HorizonMetricsRepositoryAdapter($metrics, $this->app->make(RedisFactory::class));
+        $adapter = new HorizonMetricsRepositoryAdapter($metrics);
         $this->assertSame('q2', $adapter->queueWithMaximumThroughput());
     }
 
-    public function test_acquire_wait_time_monitor_lock_uses_set_nx(): void
+    public function test_acquire_wait_time_monitor_lock_delegates(): void
     {
         $metrics = Mockery::mock(SunsetMetricsRepo::class);
-        $factory = $this->app->make(RedisFactory::class);
-        $factory->connection('default')->del('sunset:wait-time-lock');
+        $metrics->shouldReceive('acquireWaitTimeLock')->with(60)->andReturn(true);
 
-        $adapter = new HorizonMetricsRepositoryAdapter($metrics, $factory);
-
+        $adapter = new HorizonMetricsRepositoryAdapter($metrics);
         $this->assertTrue($adapter->acquireWaitTimeMonitorLock());
-        $this->assertFalse($adapter->acquireWaitTimeMonitorLock());
-
-        $factory->connection('default')->del('sunset:wait-time-lock');
     }
 
     public function test_forget_routes_to_job_or_queue(): void
@@ -76,7 +70,7 @@ class HorizonMetricsRepositoryAdapterTest extends TestCase
         $metrics->shouldReceive('forgetJob')->with('App\\Jobs\\X')->once();
         $metrics->shouldReceive('forgetQueue')->with('App\\Jobs\\X')->once();
 
-        $adapter = new HorizonMetricsRepositoryAdapter($metrics, $this->app->make(RedisFactory::class));
+        $adapter = new HorizonMetricsRepositoryAdapter($metrics);
         $adapter->forget('App\\Jobs\\X'); // routes to both — idempotent
     }
 
@@ -89,7 +83,7 @@ class HorizonMetricsRepositoryAdapterTest extends TestCase
         $metrics->shouldReceive('forgetJob')->with('B')->once();
         $metrics->shouldReceive('forgetQueue')->with('q1')->once();
 
-        $adapter = new HorizonMetricsRepositoryAdapter($metrics, $this->app->make(RedisFactory::class));
+        $adapter = new HorizonMetricsRepositoryAdapter($metrics);
         $adapter->clear();
     }
 
@@ -98,7 +92,7 @@ class HorizonMetricsRepositoryAdapterTest extends TestCase
         $metrics = Mockery::mock(SunsetMetricsRepo::class);
         $metrics->shouldReceive('snapshot')->once();
 
-        $adapter = new HorizonMetricsRepositoryAdapter($metrics, $this->app->make(RedisFactory::class));
+        $adapter = new HorizonMetricsRepositoryAdapter($metrics);
         $adapter->snapshot();
     }
 

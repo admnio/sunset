@@ -268,7 +268,6 @@ class SunsetServiceProvider extends ServiceProvider
             MetricsRepository::class,
             fn ($app) => new HorizonMetricsRepositoryAdapter(
                 $app->make(SunsetMetricsRepository::class),
-                $app->make(RedisFactory::class),
             )
         );
     }

@@ -3,7 +3,6 @@
 namespace Admnio\Sunset\Adapters\Horizon;
 
 use Admnio\Sunset\Contracts\MetricsRepository as SunsetMetricsRepo;
-use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Laravel\Horizon\Contracts\MetricsRepository as HorizonMetricsRepository;
 
 class HorizonMetricsRepositoryAdapter implements HorizonMetricsRepository
@@ -14,11 +13,7 @@ class HorizonMetricsRepositoryAdapter implements HorizonMetricsRepository
      */
     private ?array $pendingJob = null;
 
-    public function __construct(
-        private SunsetMetricsRepo $metrics,
-        private RedisFactory $redis,
-    ) {
-    }
+    public function __construct(private SunsetMetricsRepo $metrics) {}
 
     public function measuredJobs()    { return $this->metrics->jobs(); }
     public function measuredQueues()  { return $this->metrics->queues(); }
@@ -95,10 +90,7 @@ class HorizonMetricsRepositoryAdapter implements HorizonMetricsRepository
 
     public function acquireWaitTimeMonitorLock()
     {
-        $key = config('sunset.key_prefix', 'sunset') . ':wait-time-lock';
-        $conn = $this->redis->connection(config('sunset.redis_connection', 'default'));
-        $result = $conn->set($key, '1', 'EX', 60, 'NX');
-        return (bool) ($result === true || $result === 'OK');
+        return $this->metrics->acquireWaitTimeLock(60);
     }
 
     public function forget($key)

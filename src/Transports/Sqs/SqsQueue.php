@@ -172,7 +172,7 @@ class SqsQueue extends LaravelSqsQueue
             // like CleanupExtendedPayload can still see the pointer after the
             // job processes, when getRawBody() returns the expanded body.
             if ($originalBody !== $message['Body']) {
-                $message['HorizonSqsOriginalBody'] = $originalBody;
+                $message['SunsetSqsOriginalBody'] = $originalBody;
             }
         }
 
