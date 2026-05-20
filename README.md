@@ -36,6 +36,66 @@ This release ships:
 - v1.2.0: Realtime worker activity stream
 - v1.3.0: Queue pause/resume controls
 
+## Quickstart
+
+```bash
+composer require admnio/sunset
+php artisan sunset:install
+```
+
+That's it. Sunset auto-discovers, the dashboard publishes to `public/vendor/sunset/`, and `/sunset` is accessible from localhost by default.
+
+### Wire a queue connection (if you don't already have one)
+
+Add to `config/queue.php`:
+
+```php
+'connections' => [
+    'sqs' => [/* AWS credentials, queue name, etc. */],
+    'redis' => [/* Redis connection name */],
+    'rabbitmq' => [/* host/port/user/password */],
+],
+```
+
+Sunset works with any combination of SQS, Redis, and RabbitMQ. Pick one or run all three side by side.
+
+### Open the dashboard
+
+Visit `http://your-app/sunset` (configurable via `SUNSET_PATH` env or `sunset.dashboard.path` config). Default access policy: localhost-only outside `local` env. To grant other users, register a gate in any service provider:
+
+```php
+use Admnio\Sunset\Facades\Sunset;
+
+public function boot(): void
+{
+    Sunset::auth(fn ($request) => $request->user()?->isAdmin());
+}
+```
+
+### Run the supervisor
+
+Sunset ships its own supervisor — `php artisan sunset:work`. Add it to your process manager (Supervisor, systemd, k8s) in place of `php artisan queue:work` or `php artisan horizon`.
+
+### Add rate limits (optional)
+
+```php
+use Admnio\Sunset\Facades\Sunset;
+
+public function boot(): void
+{
+    Sunset::for('geocode')->throttle(perMinute: 10)->concurrency(3);
+    Sunset::limit(\App\Jobs\GeocodeAddress::class)->throttle(perHour: 1000);
+}
+```
+
+No limits = no behavior change. The rate-limit gate short-circuits when the registry is empty.
+
+### Done
+
+You should now see queue workload, recent jobs, failed jobs, supervisors, and rate-limit usage at `/sunset`.
+
+---
+
 ## Public API
 
 Sunset commits to backwards-compatible behavior on these surfaces for the lifetime of major version 1.x. Anything not listed here is internal — see the **Internal — do NOT depend on** section below.
