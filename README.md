@@ -262,6 +262,71 @@ Every rejection (regardless of strategy) fires `Admnio\Sunset\Events\JobRateLimi
 - `sunset:sweep-rate-limit-slots` is auto-scheduled every minute by Sunset's service provider. It reconciles concurrency-slot sets against TTL'd slot keys so semaphores recover automatically from killed workers. Manual run: `php artisan sunset:sweep-rate-limit-slots`.
 - If no limits are ever registered, the gate exits via `LimitRegistry::isEmpty()` before any Redis call. Existing SQS/Redis/RabbitMQ pop paths add only one branch when rate limiting is unused — safe to ship the upgrade without declaring any limits.
 
+## Dashboard
+
+Sunset ships its own operator dashboard at `/sunset` (configurable). Inertia + Vue 3 SPA, polls every 3 seconds by default.
+
+### Install
+
+```bash
+composer require admnio/sunset
+php artisan sunset:install
+```
+
+`sunset:install` publishes the config + the compiled JS/CSS bundle to `public/vendor/sunset/`. **No Node.js required in the consumer app** — Sunset ships pre-built.
+
+### Access
+
+By default the dashboard is accessible only from localhost outside `local` env. Register a gate to allow specific users:
+
+```php
+use Admnio\Sunset\Facades\Sunset;
+
+public function boot(): void
+{
+    Sunset::auth(fn ($request) => $request->user()?->isAdmin());
+}
+```
+
+### Pages
+
+Overview · Workload · Recent jobs · Failed jobs · Pending · Completed · Metrics · Monitoring · Rate limits · Supervisors · Batches · Health.
+
+The Failed Jobs page uses a master-detail layout (list left, selected job's exception + actions right). Retry/delete actions work via POST endpoints on the same routes.
+
+### Configuration
+
+In `config/sunset.php`:
+
+```php
+'dashboard' => [
+    'path'                  => env('SUNSET_PATH', 'sunset'),
+    'poll_interval_seconds' => (int) env('SUNSET_DASHBOARD_POLL', 3),
+],
+```
+
+### Themes
+
+Auto light/dark via `prefers-color-scheme`. User can override via the header toggle (persisted in localStorage as `sunset.theme`).
+
+### Keyboard
+
+⌘K (or Ctrl+K) opens a fuzzy command palette to jump between pages. ↑/↓ to navigate, Enter to select, Esc to close.
+
+### Mobile
+
+Full responsive. Left rail collapses on tablet; on phone, master-detail becomes single-pane with back navigation.
+
+### Standalone — no Horizon dependency
+
+As of v0.8.0, `composer require admnio/sunset` does NOT install `laravel/horizon`. If you want Horizon's dashboard side-by-side with Sunset's, install Horizon separately:
+
+```bash
+composer require laravel/horizon
+```
+
+Both `/horizon` and `/sunset` will work independently. If you run both `horizon` and `sunset:work` against the same queue connection, they will compete for jobs — that's your call to make.
+
 ## Operational notes
 
 - **Long polling (default — saves money):** workers poll SQS with `WaitTimeSeconds=20` (the maximum) by default. With short-polling, every empty receive is a billable API call; long polling drastically reduces the request count on idle queues. To override, set `wait_time` (0–20) on your `sqs` queue connection in `config/queue.php` — for example `'wait_time' => 10` for faster idle-worker shutdown at the cost of more requests. `wait_time => 0` disables long polling (not recommended).
