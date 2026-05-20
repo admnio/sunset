@@ -39,7 +39,7 @@ class RateLimitStatsRepository
     {
         $conn = $this->redis->connection($this->connectionName);
         $prefix = $this->detectPrefix($conn);
-        $rawKeys = (array) $conn->keys(self::REJECT_PREFIX . '*');
+        $rawKeys = $this->scanRejectKeys($conn, $prefix);
 
         $rows = [];
         foreach ($rawKeys as $rawKey) {
@@ -78,6 +78,117 @@ class RateLimitStatsRepository
         // Sort by count descending so the most-rejected limits surface first.
         usort($rows, fn ($a, $b) => $b['count'] <=> $a['count']);
         return $rows;
+    }
+
+    /**
+     * Iterate the reject-counter keyspace with SCAN instead of KEYS.
+     *
+     * KEYS is O(n) and blocks Redis for the duration of the scan, which
+     * makes it dangerous on production-sized keyspaces. SCAN is cursor-based
+     * and runs in small, non-blocking chunks. We collect every match across
+     * all iterations before returning.
+     *
+     * The MATCH filter is applied AFTER bucket scanning, so a batch may
+     * return zero matches even when more matching keys exist further down
+     * the cursor — we keep iterating until the cursor wraps to '0'.
+     *
+     * @return array<int, string> Fully-prefixed keys as returned by the
+     *                            underlying client (the caller strips the
+     *                            prefix before subsequent reads).
+     */
+    private function scanRejectKeys($conn, string $prefix): array
+    {
+        // Redis SCAN's MATCH filter is applied server-side against the
+        // raw, fully-qualified key names. The phpredis driver does NOT
+        // automatically prepend OPT_PREFIX to the MATCH pattern (unlike
+        // get/set/etc.), so we must prepend the prefix ourselves.
+        $matchPattern = $prefix . self::REJECT_PREFIX . '*';
+
+        // Drop down to the raw phpredis client when available so we can
+        // (a) enable Redis::SCAN_RETRY for the duration of this call —
+        //     this makes phpredis loop internally over empty SCAN batches
+        //     instead of returning FALSE and forcing us to inspect cursor
+        //     state through Laravel's lossy [cursor, []] / FALSE shape, and
+        // (b) read the cursor back from the by-reference int parameter
+        //     directly, the way phpredis intends.
+        if (method_exists($conn, 'client') && defined('\\Redis::OPT_SCAN')) {
+            $client = $conn->client();
+            if (is_object($client) && method_exists($client, 'scan')) {
+                return $this->scanWithPhpRedis($client, $matchPattern);
+            }
+        }
+
+        // Fallback for non-phpredis clients (e.g. predis): use Laravel's
+        // wrapper. Predis' wrapper exposes [cursor, keys[]] cleanly.
+        return $this->scanWithLaravelWrapper($conn, $matchPattern);
+    }
+
+    /**
+     * @param  \Redis  $client
+     * @return array<int, string>
+     */
+    private function scanWithPhpRedis($client, string $matchPattern): array
+    {
+        $previousScanOption = null;
+        try {
+            $previousScanOption = $client->getOption(\Redis::OPT_SCAN);
+        } catch (Throwable) {
+            // ignore — older phpredis or misconfigured client
+        }
+
+        try {
+            // SCAN_RETRY makes phpredis loop internally over empty batches
+            // until it has keys to return or the cursor has wrapped back to 0.
+            $client->setOption(\Redis::OPT_SCAN, \Redis::SCAN_RETRY);
+
+            $cursor = null; // phpredis treats null as "start iteration"
+            $keys = [];
+            // The phpredis idiom: keep calling scan until it returns FALSE,
+            // which signals end-of-iteration. Each call returns the keys
+            // found in the current batch (possibly empty under NORETRY, but
+            // we're in RETRY so it'll only be empty at the very end).
+            while (($batch = $client->scan($cursor, $matchPattern, 100)) !== false) {
+                foreach ($batch as $k) {
+                    $keys[] = (string) $k;
+                }
+            }
+            return $keys;
+        } finally {
+            if ($previousScanOption !== null) {
+                try {
+                    $client->setOption(\Redis::OPT_SCAN, $previousScanOption);
+                } catch (Throwable) {
+                    // ignore
+                }
+            }
+        }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function scanWithLaravelWrapper($conn, string $matchPattern): array
+    {
+        $cursor = 0;
+        $keys = [];
+        do {
+            $result = $conn->scan($cursor, ['match' => $matchPattern, 'count' => 100]);
+            if ($result === false) {
+                break;
+            }
+            if (is_array($result) && count($result) === 2 && is_array($result[1])) {
+                $cursor = $result[0];
+                $batch = (array) $result[1];
+            } else {
+                $cursor = 0;
+                $batch = (array) ($result ?: []);
+            }
+            foreach ($batch as $k) {
+                $keys[] = (string) $k;
+            }
+        } while ((string) $cursor !== '0');
+
+        return $keys;
     }
 
     /**
