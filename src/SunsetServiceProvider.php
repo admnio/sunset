@@ -39,6 +39,7 @@ use Admnio\Sunset\Contracts\MasterSupervisorRepository as SunsetMasterSupervisor
 use Admnio\Sunset\Contracts\SupervisorRepository as SunsetSupervisorRepository;
 use Admnio\Sunset\Contracts\ProcessRepository as SunsetProcessRepository;
 use Admnio\Sunset\Contracts\SupervisorCommandQueue as SunsetSupervisorCommandQueue;
+use Admnio\Sunset\Contracts\WorkerMetricsRepository as SunsetWorkerMetricsRepository;
 use Admnio\Sunset\Contracts\WorkloadRepository as SunsetWorkloadRepositoryContract;
 use Admnio\Sunset\Repositories\Redis\RedisMasterSupervisorRepository;
 use Admnio\Sunset\Repositories\Redis\RedisSupervisorRepository;
@@ -66,6 +67,8 @@ use Admnio\Sunset\Repositories\Redis\RedisJobRepository;
 use Admnio\Sunset\Repositories\Redis\RedisFailedJobRepository;
 use Admnio\Sunset\Repositories\Redis\RedisTagRepository;
 use Admnio\Sunset\Repositories\Redis\RedisMetricsRepository;
+use Admnio\Sunset\Repositories\Redis\RedisWorkerMetricsRepository;
+use Admnio\Sunset\Telemetry\WorkerLoopListener;
 use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobReenqueuer;
 use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
 use Admnio\Sunset\Support\TransportRegistry;
@@ -258,6 +261,33 @@ class SunsetServiceProvider extends ServiceProvider
         // implementation. (Previously bound to Horizon's WorkloadRepository
         // contract via an adapter; Horizon is gone in v0.8.0.)
         $this->app->singleton(SunsetWorkloadRepositoryContract::class, $this->workloadRepositoryFactory());
+
+        // v1.1.0: Worker telemetry. Bind the public contract to the Redis
+        // implementation and alias the concrete class to the same singleton —
+        // mirrors the Limiter/RedisLimiter pattern above so anything type-
+        // hinting either name resolves to one instance.
+        $this->app->singleton(SunsetWorkerMetricsRepository::class, function ($app) {
+            return new RedisWorkerMetricsRepository(
+                $app->make(RedisFactory::class),
+            );
+        });
+        $this->app->singleton(
+            RedisWorkerMetricsRepository::class,
+            fn ($app) => $app->make(SunsetWorkerMetricsRepository::class)
+        );
+
+        // Per-process listener singleton. The sampler it lazily constructs
+        // accumulates state (lastWall, jobsProcessed, etc.) across events,
+        // which is essential for CPU-delta math — making the singleton scope
+        // a load-bearing implementation detail.
+        $this->app->singleton(WorkerLoopListener::class, function ($app) {
+            return new WorkerLoopListener(
+                repository: $app->make(SunsetWorkerMetricsRepository::class),
+                logger: $app->make(LoggerInterface::class),
+                enabled: (bool) $app['config']->get('sunset.telemetry.enabled', true),
+                intervalSeconds: (int) $app['config']->get('sunset.telemetry.interval_seconds', 5),
+            );
+        });
     }
 
     public function boot(): void
@@ -398,6 +428,21 @@ class SunsetServiceProvider extends ServiceProvider
             \Illuminate\Queue\Events\JobExceptionOccurred::class,
             \Admnio\Sunset\RateLimiting\Listeners\ReleaseConcurrencySlots::class
         );
+
+        // v1.1.0: Per-worker telemetry. The listener short-circuits internally
+        // when `sunset.telemetry.enabled` is false, but skipping the
+        // subscription entirely avoids the trivial dispatcher hit and keeps
+        // the event-listener registry tidy when telemetry is intentionally off.
+        if ((bool) $this->app['config']->get('sunset.telemetry.enabled', true)) {
+            $events->listen(
+                \Illuminate\Queue\Events\Looping::class,
+                [WorkerLoopListener::class, 'handleLooping']
+            );
+            $events->listen(
+                \Illuminate\Queue\Events\JobProcessed::class,
+                [WorkerLoopListener::class, 'handleJobProcessed']
+            );
+        }
 
         $this->app->booted(function () {
             $schedule = $this->app->make(Schedule::class);
