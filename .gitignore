@@ -9,4 +9,7 @@ composer.lock
 /.superpowers/
 /node_modules/
 package-lock.json
-/public-dist/
+# /public-dist/ is intentionally NOT ignored: the compiled dashboard bundle
+# (app.js, app.css) must ship in the Composer package so consumers can run
+# `php artisan sunset:install` and publish it to public/vendor/sunset/.
+# Maintainers should run `npm run build` before tagging a release.

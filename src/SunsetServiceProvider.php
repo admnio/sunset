@@ -251,6 +251,24 @@ class SunsetServiceProvider extends ServiceProvider
                 __DIR__ . '/../config/sunset.php' => config_path('sunset.php'),
             ], 'sunset-config');
 
+            // v0.8.0: Publish the pre-built dashboard bundle. The source files
+            // only exist after `npm run build` runs — for distribution they are
+            // committed into `public-dist/` so they ship in the Composer
+            // package. If absent, Laravel's vendor:publish silently skips them.
+            $this->publishes([
+                __DIR__ . '/../public-dist/app.js'  => public_path('vendor/sunset/app.js'),
+                __DIR__ . '/../public-dist/app.css' => public_path('vendor/sunset/app.css'),
+            ], 'sunset-assets');
+
+            // v0.8.0: Optional override of the Inertia root view. Consumers
+            // shouldn't need this for normal use (the view is loaded under the
+            // `sunset` namespace), but publishing lets them customize CSP
+            // nonces, asset paths, or layout chrome.
+            $this->publishes([
+                __DIR__ . '/../resources/views/sunset-app.blade.php' =>
+                    resource_path('views/vendor/sunset/sunset-app.blade.php'),
+            ], 'sunset-views');
+
             $this->commands([
                 // v0.4.0:
                 SunsetMigrateRedisKeysCommand::class,
