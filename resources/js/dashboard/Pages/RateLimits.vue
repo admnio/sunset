@@ -9,6 +9,7 @@ const initial = page.props;
 const { data } = usePolling(page.url);
 const current = computed(() => data.value ?? initial);
 const limits = computed(() => current.value.limits ?? []);
+const rejects = computed(() => current.value.rejects ?? []);
 </script>
 
 <template>
@@ -49,5 +50,23 @@ const limits = computed(() => current.value.limits ?? []);
         <div class="text-sunset-muted truncate">{{ limit.over_limit || '—' }}</div>
       </div>
     </div>
+
+    <section v-if="rejects.length" class="space-y-2">
+      <h2 class="text-xs uppercase text-sunset-muted">Recent rejections</h2>
+      <div class="border border-sunset-border rounded divide-y divide-sunset-border">
+        <div
+          v-for="row in rejects"
+          :key="`${row.connection}:${row.queue}:${row.limit}`"
+          class="px-3 py-2 grid gap-3 text-xs"
+          style="grid-template-columns: 1fr 1fr 1fr 120px 80px"
+        >
+          <div class="text-sunset-text font-bold truncate">{{ row.limit }}</div>
+          <div class="text-sunset-muted truncate">{{ row.connection }}/{{ row.queue }}</div>
+          <div></div>
+          <div class="text-sunset-text text-right tabular-nums">{{ row.count }}</div>
+          <div class="text-sunset-muted text-right">~{{ row.ttl_seconds }}s</div>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
