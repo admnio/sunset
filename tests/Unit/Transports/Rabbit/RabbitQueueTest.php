@@ -111,10 +111,14 @@ class RabbitQueueTest extends TestCase
         $store = Mockery::mock(DelayedJobStore::class);
         $store->shouldReceive('buffer')
             ->once()
-            ->withArgs(function (string $queueName, string $payload, float $eta) use (&$capturedPayload) {
+            ->withArgs(function (string $queueName, string $connection, string $payload, float $eta) use (&$capturedPayload) {
                 $capturedPayload = $payload;
                 $decoded = json_decode($payload, true);
                 return $queueName === 'orders'
+                    // RabbitQueue must pass its connection name so the
+                    // reenqueuer routes swept jobs back to RabbitMQ rather
+                    // than the previously-hardcoded SQS destination.
+                    && $connection === 'rabbitmq'
                     && is_array($decoded)
                     && array_key_exists('id', $decoded)
                     && array_key_exists('type', $decoded)
