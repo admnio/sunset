@@ -17,6 +17,7 @@ Route::middleware([Authorize::class, \Inertia\Middleware::class, SetSunsetInerti
         Route::get('/jobs/pending',           [C\PendingJobsController::class,   'show'])->name('jobs.pending');
         Route::get('/jobs/completed',         [C\CompletedJobsController::class, 'show'])->name('jobs.completed');
         Route::get('/metrics',                [C\MetricsController::class,       'show'])->name('metrics');
+        Route::get('/metrics/series',         [C\MetricsController::class,       'series'])->name('metrics.series');
         Route::get('/metrics/jobs/{name}',    [C\MetricsController::class,       'jobSeries'])->name('metrics.jobs');
         Route::get('/metrics/queues/{name}',  [C\MetricsController::class,       'queueSeries'])->name('metrics.queues');
         Route::get('/monitoring',             [C\MonitoringController::class,    'show'])->name('monitoring');
