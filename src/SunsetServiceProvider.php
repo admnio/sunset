@@ -236,6 +236,11 @@ class SunsetServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // v0.8.0: Load the dashboard routes. The route group itself applies
+        // Authorize + Inertia middleware and prefixes with sunset.dashboard.path
+        // (falling back to top-level 'path' for users mid-upgrade).
+        $this->loadRoutesFrom(__DIR__ . '/../routes/sunset.php');
+
         if ($this->app->runningInConsole()) {
             $this->publishes([
                 __DIR__ . '/../config/sunset.php' => config_path('sunset.php'),
