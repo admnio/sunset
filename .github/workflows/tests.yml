@@ -66,21 +66,40 @@ jobs:
           RABBITMQ_PASSWORD: guest
           RABBITMQ_VHOST: /
 
-  # browser:
-  #   The Browser/Dusk job is intentionally not wired into CI yet. Running
-  #   Dusk against a Laravel PACKAGE (vs a Laravel APP) requires a real host
-  #   to serve /sunset routes — `php -S` against a non-existent public/
-  #   directory in this repo will not work. The proper integration uses
-  #   orchestra/testbench-dusk, which provides a TestCase that boots the
-  #   package providers into a temporary Laravel app and serves it for
-  #   Dusk. Wiring that requires:
-  #     1. composer require --dev orchestra/testbench-dusk
-  #     2. Have DuskTestCase extend Orchestra\Testbench\Dusk\TestCase
-  #        instead of Laravel\Dusk\TestCase
-  #     3. Override getPackageProviders() (already done in TestCase.php)
-  #     4. Use Testbench's serve helpers instead of php -S
-  #   Tracked as a v0.9+ follow-up; Dusk tests skip cleanly locally in the
-  #   meantime via DuskTestCase's ChromeDriver-reachability guard.
+  browser:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+      localstack:
+        image: localstack/localstack:3
+        ports: ['4566:4566']
+        env:
+          SERVICES: sqs,s3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: pcntl, posix, redis
+      - uses: nanasess/setup-chromedriver@v2
+      - name: Composer install
+        run: composer install --no-interaction
+      - name: Start ChromeDriver
+        run: chromedriver --port=9515 &
+      - name: Wait for ChromeDriver
+        run: |
+          for i in $(seq 1 30); do
+            curl -s http://127.0.0.1:9515/status > /dev/null && break
+            sleep 1
+          done
+      - name: Run Dusk
+        run: vendor/bin/phpunit --testsuite Browser
+        env:
+          LOCALSTACK_ENDPOINT: http://localhost:4566
+          REDIS_HOST: 127.0.0.1
 
   bundle:
     runs-on: ubuntu-latest
