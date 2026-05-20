@@ -6,6 +6,7 @@ use Admnio\Sunset\Events\JobQueueing;
 use Admnio\Sunset\Events\JobQueued;
 use Admnio\Sunset\Events\JobReserved;
 use Admnio\Sunset\JobPayload;
+use Admnio\Sunset\RateLimiting\RateLimitGate;
 use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
 use Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler;
 use Admnio\Sunset\Transports\Sqs\FifoMessageAttributes;
@@ -179,15 +180,34 @@ class SqsQueue extends LaravelSqsQueue
 
         // Fire JobReserved with the prepared payload JSON the worker will see.
         $jobPayload = new JobPayload($message['Body']);
-        event(new JobReserved($this->getConnectionName() ?? '', $this->stripQueuesPrefix($resolvedQueue), $jobPayload));
+        $strippedQueue = $this->stripQueuesPrefix($resolvedQueue);
+        event(new JobReserved($this->getConnectionName() ?? '', $strippedQueue, $jobPayload));
 
-        return new \Illuminate\Queue\Jobs\SqsJob(
+        $job = new \Illuminate\Queue\Jobs\SqsJob(
             $this->container,
             $this->sqs,
             $message,
             $this->connectionName,
             $queueUrl
         );
+
+        // Rate-limit gate. Resolved lazily per-pop; if no Sunset::for()
+        // limits are registered, the gate short-circuits inside admit()
+        // before touching Redis, so the no-limit path stays O(1).
+        $gate = $this->container->make(RateLimitGate::class);
+        $decoded = json_decode($job->getRawBody(), true) ?: [];
+        $decoded['connection'] = $this->getConnectionName();
+        $tags = is_array($decoded['tags'] ?? null) ? $decoded['tags'] : [];
+
+        $decision = $gate->admit($job, $decoded, $strippedQueue, $tags);
+        if (! $decision->admitted) {
+            // Gate already invoked release()/fail()/delete() on the job
+            // per the limit's overLimit strategy. Returning null signals
+            // the worker to loop without dispatching.
+            return null;
+        }
+
+        return $job;
     }
 
     /**

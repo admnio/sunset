@@ -6,6 +6,7 @@ use Admnio\Sunset\Events\JobQueued;
 use Admnio\Sunset\Events\JobQueueing;
 use Admnio\Sunset\Events\JobReserved;
 use Admnio\Sunset\JobPayload;
+use Admnio\Sunset\RateLimiting\RateLimitGate;
 use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
 use VladimirYuldashev\LaravelQueueRabbitMQ\Queue\Jobs\RabbitMQJob;
 use VladimirYuldashev\LaravelQueueRabbitMQ\Queue\QueueConfig;
@@ -117,6 +118,22 @@ class RabbitQueue extends VendorQueue
             $queueName = $this->getQueue($queue);
             $payload = new JobPayload($job->getRawBody());
             event(new JobReserved($this->getConnectionName(), $queueName, $payload));
+
+            // Rate-limit gate. Resolved lazily per-pop; if no Sunset::for()
+            // limits are registered, the gate short-circuits inside admit()
+            // before touching Redis, so the no-limit path stays O(1).
+            $gate = $this->container->make(RateLimitGate::class);
+            $decoded = json_decode($job->getRawBody(), true) ?: [];
+            $decoded['connection'] = $this->getConnectionName();
+            $tags = is_array($decoded['tags'] ?? null) ? $decoded['tags'] : [];
+
+            $decision = $gate->admit($job, $decoded, $queueName, $tags);
+            if (! $decision->admitted) {
+                // Gate already invoked release()/fail()/delete() on the job
+                // per the limit's overLimit strategy. Returning null signals
+                // the worker to loop without dispatching.
+                return null;
+            }
         }
 
         return $job;

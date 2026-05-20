@@ -6,7 +6,11 @@ use Aws\Sqs\SqsClient;
 use Admnio\Sunset\Events\JobQueueing;
 use Admnio\Sunset\Events\JobQueued;
 use Admnio\Sunset\Events\JobReserved;
+use Admnio\Sunset\RateLimiting\Decision;
+use Admnio\Sunset\RateLimiting\LimitRegistry;
+use Admnio\Sunset\RateLimiting\RateLimitGate;
 use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
+use Illuminate\Contracts\Queue\Job as JobContract;
 use Illuminate\Support\Facades\Event;
 use Admnio\Sunset\Transports\Sqs\SqsQueue;
 use Admnio\Sunset\Transports\Sqs\Payload\ExtendedPayloadHandler;
@@ -16,6 +20,13 @@ use Mockery;
 
 class SqsQueueTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Reset the singleton registry so each test starts with no limits.
+        $this->app->forgetInstance(LimitRegistry::class);
+    }
+
     public function test_create_payload_includes_id_field(): void
     {
         $queue = $this->makeQueue();
@@ -205,6 +216,93 @@ class SqsQueueTest extends TestCase
         $this->assertNotNull($job);
         $this->assertSame('{"id":"abc","tags":[]}', $job->getRawBody());
         Event::assertDispatched(JobReserved::class);
+    }
+
+    /**
+     * With NO Sunset::for() limits registered, the gate's empty-registry
+     * short-circuit returns Decision::admit() without touching Redis, so
+     * pop() returns the job unchanged. Exercises the real gate (no mock)
+     * to confirm the zero-overhead path through actual production code.
+     */
+    public function test_pop_returns_job_unchanged_when_no_limits_registered(): void
+    {
+        Event::fake([JobReserved::class]);
+
+        $sqs = Mockery::mock(SqsClient::class);
+        $sqs->shouldReceive('receiveMessage')
+            ->once()
+            ->andReturn(new \Aws\Result([
+                'Messages' => [[
+                    'MessageId' => 'mid-1',
+                    'ReceiptHandle' => 'rh-1',
+                    'Body' => '{"id":"abc","tags":[]}',
+                    'Attributes' => ['ApproximateReceiveCount' => 1],
+                ]],
+            ]));
+
+        $queue = $this->makeQueueWithSqs($sqs);
+        $queue->setContainer($this->app);
+
+        $job = $queue->pop('default');
+
+        $this->assertNotNull($job);
+        $this->assertSame('{"id":"abc","tags":[]}', $job->getRawBody());
+    }
+
+    /**
+     * With a registered limit that REJECTS, pop() must return null because
+     * the gate has already taken ownership of the job (release/fail/delete).
+     * Uses a mock gate to isolate the transport's pop() wiring — proving the
+     * gate is invoked with the right shape AND that pop() honors the
+     * Decision::reject() result. The real-Redis gate-rejection roundtrip
+     * lives in B8 integration tests.
+     */
+    public function test_pop_returns_null_when_gate_rejects(): void
+    {
+        Event::fake([JobReserved::class]);
+
+        $sqs = Mockery::mock(SqsClient::class);
+        $sqs->shouldReceive('receiveMessage')
+            ->once()
+            ->andReturn(new \Aws\Result([
+                'Messages' => [[
+                    'MessageId' => 'mid-1',
+                    'ReceiptHandle' => 'rh-1',
+                    'Body' => '{"id":"abc","tags":["billing"]}',
+                    'Attributes' => ['ApproximateReceiveCount' => 1],
+                ]],
+            ]));
+
+        $capturedPayload = null;
+        $capturedQueue = null;
+        $gate = Mockery::mock(RateLimitGate::class);
+        $gate->shouldReceive('admit')
+            ->once()
+            ->withArgs(function (JobContract $job, array $payload, string $queueArg, array $tags)
+                use (&$capturedPayload, &$capturedQueue) {
+                $capturedPayload = $payload;
+                $capturedQueue = $queueArg;
+                return true;
+            })
+            ->andReturnUsing(function (JobContract $job) {
+                // Real gate would call release/fail/delete here. We can't
+                // ack on the mocked SqsClient, so just return a Decision::reject.
+                return Decision::reject(30);
+            });
+
+        $this->app->instance(RateLimitGate::class, $gate);
+
+        $queue = $this->makeQueueWithSqs($sqs);
+        $queue->setContainer($this->app);
+
+        $result = $queue->pop('default');
+        $this->assertNull($result);
+
+        // Verify the payload shape passed to the gate.
+        $this->assertIsArray($capturedPayload);
+        $this->assertSame(['billing'], $capturedPayload['tags']);
+        $this->assertSame('default', $capturedQueue);
+        $this->assertArrayHasKey('connection', $capturedPayload);
     }
 
     private function makeQueueWithSqs(SqsClient $sqs): SqsQueue

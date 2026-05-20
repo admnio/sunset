@@ -6,6 +6,7 @@ use Admnio\Sunset\Events\JobQueueing;
 use Admnio\Sunset\Events\JobQueued;
 use Admnio\Sunset\Events\JobReserved;
 use Admnio\Sunset\JobPayload;
+use Admnio\Sunset\RateLimiting\RateLimitGate;
 use Illuminate\Queue\RedisQueue as LaravelRedisQueue;
 use Illuminate\Support\Str;
 
@@ -48,6 +49,22 @@ class RedisQueue extends LaravelRedisQueue
             $queueName = Str::replaceFirst('queues:', '', $queue ?? $this->default);
             $payload = new JobPayload($job->getReservedJob());
             event(new JobReserved($this->getConnectionName(), $queueName, $payload));
+
+            // Rate-limit gate. Resolved lazily per-pop; if no Sunset::for()
+            // limits are registered, the gate short-circuits inside admit()
+            // before touching Redis, so the no-limit path stays O(1).
+            $gate = $this->container->make(RateLimitGate::class);
+            $decoded = json_decode($job->getReservedJob(), true) ?: [];
+            $decoded['connection'] = $this->getConnectionName();
+            $tags = is_array($decoded['tags'] ?? null) ? $decoded['tags'] : [];
+
+            $decision = $gate->admit($job, $decoded, $queueName, $tags);
+            if (! $decision->admitted) {
+                // Gate already invoked release()/fail()/delete() on the job
+                // per the limit's overLimit strategy. Returning null signals
+                // the worker to loop without dispatching.
+                return null;
+            }
         }
 
         return $job;

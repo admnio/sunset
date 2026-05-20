@@ -5,9 +5,13 @@ namespace Admnio\Sunset\Tests\Unit\Transports\Rabbit;
 use Admnio\Sunset\Events\JobQueued;
 use Admnio\Sunset\Events\JobQueueing;
 use Admnio\Sunset\Events\JobReserved;
+use Admnio\Sunset\RateLimiting\Decision;
+use Admnio\Sunset\RateLimiting\LimitRegistry;
+use Admnio\Sunset\RateLimiting\RateLimitGate;
 use Admnio\Sunset\Tests\TestCase;
 use Admnio\Sunset\Transports\Rabbit\RabbitQueue;
 use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
+use Illuminate\Contracts\Queue\Job as JobContract;
 use Illuminate\Support\Facades\Event;
 use Mockery;
 use PhpAmqpLib\Channel\AMQPChannel;
@@ -18,6 +22,13 @@ use VladimirYuldashev\LaravelQueueRabbitMQ\Queue\QueueConfig;
 
 class RabbitQueueTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Reset the singleton registry so each test starts with no limits.
+        $this->app->forgetInstance(LimitRegistry::class);
+    }
+
     public function test_push_raw_dispatches_sunset_events_around_send(): void
     {
         Event::fake([JobQueueing::class, JobQueued::class]);
@@ -174,6 +185,89 @@ class RabbitQueueTest extends TestCase
         Event::assertDispatched(JobQueued::class, function ($e) {
             return $e->connectionName === 'rabbitmq' && $e->queue === 'orders';
         });
+    }
+
+    /**
+     * With NO Sunset::for() limits registered, the gate's empty-registry
+     * short-circuit returns Decision::admit() without touching Redis, so
+     * pop() returns the job unchanged. Exercises the real gate (no mock)
+     * to confirm the zero-overhead path through actual production code.
+     */
+    public function test_pop_returns_job_unchanged_when_no_limits_registered(): void
+    {
+        $body = json_encode([
+            'id' => 'xyz',
+            'displayName' => 'TestJob',
+            'data' => [],
+            'attempts' => 0,
+        ]);
+        $message = new AMQPMessage($body);
+
+        $queue = $this->makeQueueWithoutBroker(['getChannel']);
+        $queue->shouldAllowMockingProtectedMethods();
+
+        $channel = Mockery::mock(AMQPChannel::class);
+        $channel->shouldReceive('basic_get')->with('orders')->andReturn($message);
+        $queue->shouldReceive('getChannel')->andReturn($channel);
+
+        $queue->setConnectionName('rabbitmq');
+        $queue->setContainer($this->app);
+
+        $result = $queue->pop('orders');
+        $this->assertInstanceOf(RabbitMQJob::class, $result);
+    }
+
+    /**
+     * With a registered limit that REJECTS, pop() must return null because
+     * the gate has already taken ownership of the job (release/fail/delete).
+     * Uses a mock gate to isolate the transport's pop() wiring — proving the
+     * gate is invoked with the right shape AND that pop() honors the
+     * Decision::reject() result. The real-Redis gate-rejection roundtrip
+     * lives in B8 integration tests.
+     */
+    public function test_pop_returns_null_when_gate_rejects(): void
+    {
+        $body = json_encode([
+            'id' => 'xyz',
+            'displayName' => 'TestJob',
+            'tags' => ['billing'],
+            'data' => [],
+            'attempts' => 0,
+        ]);
+        $message = new AMQPMessage($body);
+
+        $queue = $this->makeQueueWithoutBroker(['getChannel']);
+        $queue->shouldAllowMockingProtectedMethods();
+
+        $channel = Mockery::mock(AMQPChannel::class);
+        $channel->shouldReceive('basic_get')->with('orders')->andReturn($message);
+        $queue->shouldReceive('getChannel')->andReturn($channel);
+
+        $capturedPayload = null;
+        $capturedQueue = null;
+        $gate = Mockery::mock(RateLimitGate::class);
+        $gate->shouldReceive('admit')
+            ->once()
+            ->withArgs(function (JobContract $job, array $payload, string $queueArg, array $tags)
+                use (&$capturedPayload, &$capturedQueue) {
+                $capturedPayload = $payload;
+                $capturedQueue = $queueArg;
+                return true;
+            })
+            ->andReturn(Decision::reject(30));
+
+        $this->app->instance(RateLimitGate::class, $gate);
+
+        $queue->setConnectionName('rabbitmq');
+        $queue->setContainer($this->app);
+
+        $result = $queue->pop('orders');
+        $this->assertNull($result);
+
+        $this->assertIsArray($capturedPayload);
+        $this->assertSame(['billing'], $capturedPayload['tags']);
+        $this->assertSame('orders', $capturedQueue);
+        $this->assertArrayHasKey('connection', $capturedPayload);
     }
 
     /**
