@@ -56,3 +56,24 @@ a.sr-only:focus-visible {
 .pill-warn  { background: rgb(245 158 11 / 0.2); color: var(--status-warn-text); }
 .pill-ok    { background: rgb(34 197 94 / 0.2);  color: var(--status-ok-text); }
 .pill-info  { background: rgb(96 165 250 / 0.2); color: var(--status-info-text); }
+
+/* Inline banners — same theme-aware text colors as the pills. */
+.banner-warn {
+  border: 1px solid rgb(245 158 11 / 0.4);
+  background: rgb(245 158 11 / 0.1);
+  color: var(--status-warn-text);
+}
+.banner-info {
+  border: 1px solid rgb(96 165 250 / 0.4);
+  background: rgb(96 165 250 / 0.1);
+  color: var(--status-info-text);
+}
+
+/* Toasts — solid-fill variants use darker shades so white text passes AA. */
+.toast-info {
+  background: rgb(var(--sunset-card));
+  color: rgb(var(--sunset-text));
+  border: 1px solid rgb(var(--sunset-border));
+}
+.toast-error   { background: rgb(185 28 28);  color: rgb(255 255 255); } /* red-700 */
+.toast-success { background: rgb(21 128 61);  color: rgb(255 255 255); } /* green-700 */

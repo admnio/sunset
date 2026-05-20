@@ -20,7 +20,7 @@ const configured = computed(() => current.value.configured ?? true);
 
     <div
       v-if="! configured"
-      class="border border-status-warn/40 bg-status-warn/10 text-status-warn rounded p-3 text-xs"
+      class="banner-warn rounded p-3 text-xs"
     >
       Laravel batches are not configured on this installation. Publish the
       <code>queue:batches-table</code> migration to enable them.
