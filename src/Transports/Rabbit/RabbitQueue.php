@@ -7,9 +7,6 @@ use Admnio\Sunset\Events\JobQueueing;
 use Admnio\Sunset\Events\JobReserved;
 use Admnio\Sunset\JobPayload;
 use Admnio\Sunset\Transports\Sqs\Delay\DelayedJobStore;
-use DateInterval;
-use DateTimeInterface;
-use Illuminate\Support\Str;
 use VladimirYuldashev\LaravelQueueRabbitMQ\Queue\Jobs\RabbitMQJob;
 use VladimirYuldashev\LaravelQueueRabbitMQ\Queue\QueueConfig;
 use VladimirYuldashev\LaravelQueueRabbitMQ\Queue\RabbitMQQueue as VendorQueue;
@@ -71,6 +68,21 @@ class RabbitQueue extends VendorQueue
         return $result;
     }
 
+    /**
+     * Schedule a job for delayed dispatch.
+     *
+     * RabbitMQ has no native sorted-set delay primitive, so rather than rely
+     * on the vendor's per-TTL holding-queue trick (or the delayed-exchange
+     * plugin), we route delayed jobs through Sunset's {@see DelayedJobStore}
+     * — the same Redis-backed buffer used by {@see \Admnio\Sunset\Transports\Sqs\SqsQueue::later()}
+     * for delays exceeding SQS's native 15-minute cap. The reaper sweeps the
+     * store on its tick and republishes due jobs via {@see pushRaw()}.
+     *
+     * Lifecycle events (JobQueueing / JobQueued) fire at buffer time — not at
+     * reap time — so the dashboard shows delayed jobs immediately for the
+     * entire delay window. The reaper does NOT refire these events on
+     * promotion. This matches SqsQueue::later()'s buffered long-delay path.
+     */
     public function later($delay, $job, $data = '', $queue = null): mixed
     {
         $this->lastPushed = $job;
@@ -78,18 +90,18 @@ class RabbitQueue extends VendorQueue
         $queueName = $this->getQueue($queue);
         $payload = $this->createPayload($job, $queueName, $data);
 
-        $availableAt = $this->availableAtFromDelay($delay);
+        $prepared = (new JobPayload($payload))->prepare($job);
+        $connection = $this->getConnectionName();
+
+        event(new JobQueueing($connection, $queueName, $prepared));
 
         /** @var DelayedJobStore $store */
         $store = $this->container->make(DelayedJobStore::class);
-        $store->buffer($queueName, $payload, (float) $availableAt);
+        $store->buffer($queueName, $prepared->value, (float) $this->availableAt($delay));
 
-        // Mirror Laravel's Queue contract: later() returns an identifier.
-        // The reaper will publish via pushRaw() when the ETA elapses, at
-        // which point the AMQP correlation id is assigned. Until then a
-        // synthetic id keeps dispatch sites that inspect the return value
-        // (e.g. dispatch()->onQueue()->afterResponse() chains) happy.
-        return Str::random(40);
+        event(new JobQueued($connection, $queueName, $prepared));
+
+        return $prepared->id();
     }
 
     public function pop($queue = null)
@@ -103,16 +115,5 @@ class RabbitQueue extends VendorQueue
         }
 
         return $job;
-    }
-
-    private function availableAtFromDelay(int|DateInterval|DateTimeInterface $delay): int
-    {
-        if ($delay instanceof DateTimeInterface) {
-            return $delay->getTimestamp();
-        }
-        if ($delay instanceof DateInterval) {
-            return (new \DateTime())->add($delay)->getTimestamp();
-        }
-        return time() + $delay;
     }
 }

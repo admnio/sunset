@@ -105,41 +105,71 @@ class RabbitQueueTest extends TestCase
 
     public function test_later_writes_to_delayed_job_store_and_skips_amqp(): void
     {
+        Event::fake([JobQueueing::class, JobQueued::class]);
+
+        $capturedPayload = null;
         $store = Mockery::mock(DelayedJobStore::class);
         $store->shouldReceive('buffer')
             ->once()
-            ->withArgs(function (string $queueName, string $payload, float $eta) {
+            ->withArgs(function (string $queueName, string $payload, float $eta) use (&$capturedPayload) {
+                $capturedPayload = $payload;
                 $decoded = json_decode($payload, true);
                 return $queueName === 'orders'
                     && is_array($decoded)
+                    && array_key_exists('id', $decoded)
+                    && array_key_exists('type', $decoded)
+                    && array_key_exists('tags', $decoded)
+                    && array_key_exists('pushedAt', $decoded)
                     && $eta >= (float) time();
             });
 
         $this->app->instance(DelayedJobStore::class, $store);
 
         // Partial mock that asserts the AMQP publish path is never invoked.
-        // If later() ever calls parent::laterRaw() or parent::pushRaw() it
-        // would hit declareDestination / publishBasic / batch_basic_publish,
-        // all of which we assert as never-called.
+        // The Mockery partial-mock stubs these protected vendor methods as
+        // no-ops, so `shouldNotReceive` confirms later() never invoked them —
+        // i.e. delayed dispatch never touched declareDestination / declareQueue
+        // / publishBasic / laterRaw / pushRaw and never reached the broker.
         $queue = $this->makeQueueWithoutBroker([
             'declareDestination',
             'declareQueue',
             'publishBasic',
             'laterRaw',
+            'pushRaw',
         ]);
         $queue->shouldAllowMockingProtectedMethods();
         $queue->shouldNotReceive('declareDestination');
         $queue->shouldNotReceive('declareQueue');
         $queue->shouldNotReceive('publishBasic');
         $queue->shouldNotReceive('laterRaw');
+        $queue->shouldNotReceive('pushRaw');
 
         $queue->setConnectionName('rabbitmq');
         $queue->setContainer($this->app);
 
         $id = $queue->later(60, new \stdClass(), '', 'orders');
 
+        // The return value MUST be the prepared payload's canonical id (not a
+        // random synthetic string), so dispatch sites get a real persistent id
+        // tied to the buffered job. JobPayload::id() returns `uuid` in
+        // preference to `id` (the vendor RabbitMQQueue::createPayloadArray
+        // injects its own `id` field; Sunset's canonical identifier is `uuid`,
+        // matching SqsQueue's behavior).
         $this->assertIsString($id);
-        $this->assertSame(40, strlen($id));
+        $this->assertNotEmpty($id);
+        $this->assertNotNull($capturedPayload);
+        $decoded = json_decode($capturedPayload, true);
+        $this->assertSame($decoded['uuid'], $id);
+
+        // JobQueueing fires BEFORE buffer; JobQueued fires AFTER buffer.
+        // Asserting both dispatched proves Sunset's instrumentation is
+        // applied immediately at buffer time (not deferred to reap time).
+        Event::assertDispatched(JobQueueing::class, function ($e) {
+            return $e->connectionName === 'rabbitmq' && $e->queue === 'orders';
+        });
+        Event::assertDispatched(JobQueued::class, function ($e) {
+            return $e->connectionName === 'rabbitmq' && $e->queue === 'orders';
+        });
     }
 
     /**
