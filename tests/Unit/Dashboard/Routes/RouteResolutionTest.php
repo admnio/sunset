@@ -4,12 +4,11 @@ namespace Admnio\Sunset\Tests\Unit\Dashboard\Routes;
 
 use Admnio\Sunset\Tests\TestCase;
 use Illuminate\Support\Facades\Route;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 class RouteResolutionTest extends TestCase
 {
-    /**
-     * @dataProvider routes
-     */
+    #[DataProvider('routes')]
     public function test_route_is_registered(string $method, string $path): void
     {
         $found = false;
