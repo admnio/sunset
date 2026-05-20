@@ -6,6 +6,7 @@ use Admnio\Sunset\Facades\Sunset;
 use Admnio\Sunset\Manager;
 use Admnio\Sunset\Tests\DuskTestCase;
 use Laravel\Dusk\Browser;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 class DashboardPagesTest extends DuskTestCase
 {
@@ -16,9 +17,7 @@ class DashboardPagesTest extends DuskTestCase
         Sunset::auth(fn () => true);
     }
 
-    /**
-     * @dataProvider pages
-     */
+    #[DataProvider('pages')]
     public function test_page_renders(string $path, string $expectText): void
     {
         $this->browse(function (Browser $b) use ($path, $expectText) {

@@ -49,6 +49,37 @@ final class MetricsController extends Controller
     }
 
     /**
+     * Batched series endpoint. Accepts `jobs[]` and `queues[]` query lists and
+     * returns a single response keyed by name with normalized point arrays.
+     * Used by the Metrics dashboard to avoid N parallel per-name fetches when
+     * the application has many distinct job classes.
+     */
+    public function series(Request $request, MetricsRepository $metrics): JsonResponse
+    {
+        $jobs   = (array) $request->query('jobs', []);
+        $queues = (array) $request->query('queues', []);
+
+        // Cap input size to prevent unbounded fan-out.
+        $jobs   = array_slice($jobs, 0, 100);
+        $queues = array_slice($queues, 0, 100);
+
+        $jobSeries = [];
+        foreach ($jobs as $name) {
+            $jobSeries[$name] = $this->normalize($metrics->snapshotsForJob((string) $name));
+        }
+
+        $queueSeries = [];
+        foreach ($queues as $name) {
+            $queueSeries[$name] = $this->normalize($metrics->snapshotsForQueue((string) $name));
+        }
+
+        return response()->json([
+            'jobs'   => $jobSeries,
+            'queues' => $queueSeries,
+        ]);
+    }
+
+    /**
      * Reduce a list of snapshot rows (each `['time' => ..., 'throughput' => ...,
      * 'runtime' => ...]`) to a normalized 0..1 array of throughput values
      * suitable for the dashboard's <Sparkline> component.

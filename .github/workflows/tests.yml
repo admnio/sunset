@@ -37,6 +37,18 @@ jobs:
       redis:
         image: redis:7-alpine
         ports: ['6379:6379']
+      rabbitmq:
+        image: rabbitmq:3-management
+        ports: ['5672:5672', '15672:15672']
+        env:
+          RABBITMQ_DEFAULT_USER: guest
+          RABBITMQ_DEFAULT_PASS: guest
+          RABBITMQ_DEFAULT_VHOST: /
+        options: >-
+          --health-cmd "rabbitmq-diagnostics ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -48,3 +60,43 @@ jobs:
         env:
           LOCALSTACK_ENDPOINT: http://localhost:4566
           REDIS_HOST: 127.0.0.1
+          RABBITMQ_HOST: 127.0.0.1
+          RABBITMQ_PORT: 5672
+          RABBITMQ_USER: guest
+          RABBITMQ_PASSWORD: guest
+          RABBITMQ_VHOST: /
+
+  # browser:
+  #   The Browser/Dusk job is intentionally not wired into CI yet. Running
+  #   Dusk against a Laravel PACKAGE (vs a Laravel APP) requires a real host
+  #   to serve /sunset routes — `php -S` against a non-existent public/
+  #   directory in this repo will not work. The proper integration uses
+  #   orchestra/testbench-dusk, which provides a TestCase that boots the
+  #   package providers into a temporary Laravel app and serves it for
+  #   Dusk. Wiring that requires:
+  #     1. composer require --dev orchestra/testbench-dusk
+  #     2. Have DuskTestCase extend Orchestra\Testbench\Dusk\TestCase
+  #        instead of Laravel\Dusk\TestCase
+  #     3. Override getPackageProviders() (already done in TestCase.php)
+  #     4. Use Testbench's serve helpers instead of php -S
+  #   Tracked as a v0.9+ follow-up; Dusk tests skip cleanly locally in the
+  #   meantime via DuskTestCase's ChromeDriver-reachability guard.
+
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Node deps
+        run: npm install
+      - name: Rebuild bundle
+        run: npm run build
+      - name: Verify committed bundle matches build output
+        run: |
+          if ! git diff --exit-code public-dist/; then
+            echo "::error::Committed public-dist/ does not match npm run build output."
+            echo "::error::Run 'npm run build' locally and commit the resulting files before tagging."
+            exit 1
+          fi
