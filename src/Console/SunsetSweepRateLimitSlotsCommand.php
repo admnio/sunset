@@ -7,11 +7,23 @@ use Illuminate\Console\Command;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Illuminate\Support\Str;
 
+/**
+ * @internal This class is part of Sunset's internal implementation; signatures
+ *           may change between minor releases of v1.x. Consumers should depend
+ *           on the published Admnio\Sunset\Contracts\* interfaces instead.
+ */
 class SunsetSweepRateLimitSlotsCommand extends Command
 {
     protected $signature = 'sunset:sweep-rate-limit-slots';
 
     protected $description = 'Reconcile orphaned rate-limit concurrency slots against the Redis slot keys.';
+
+    /**
+     * Cache the Redis client prefix once per command invocation. Same rationale
+     * as RateLimitStatsRepository — reflection-and-method-existence probing
+     * doesn't change between calls on the same connection.
+     */
+    private ?string $cachedPrefix = null;
 
     public function handle(RedisLimiter $limiter, RedisFactory $redis): int
     {
@@ -46,6 +58,10 @@ class SunsetSweepRateLimitSlotsCommand extends Command
      */
     private function detectPrefix($conn): string
     {
+        if ($this->cachedPrefix !== null) {
+            return $this->cachedPrefix;
+        }
+
         // phpredis: PhpRedisConnection wraps a \Redis client that exposes
         // _prefix('') (returns the configured prefix with the given suffix
         // appended) and getOption(\Redis::OPT_PREFIX).
@@ -55,13 +71,13 @@ class SunsetSweepRateLimitSlotsCommand extends Command
                 if (is_object($client) && method_exists($client, '_prefix')) {
                     $p = $client->_prefix('');
                     if (is_string($p) && $p !== '') {
-                        return $p;
+                        return $this->cachedPrefix = $p;
                     }
                 }
                 if (is_object($client) && method_exists($client, 'getOption') && defined('\\Redis::OPT_PREFIX')) {
                     $p = $client->getOption(\Redis::OPT_PREFIX);
                     if (is_string($p) && $p !== '') {
-                        return $p;
+                        return $this->cachedPrefix = $p;
                     }
                 }
                 // predis: connection client exposes getOptions()->__get('prefix').
@@ -70,7 +86,7 @@ class SunsetSweepRateLimitSlotsCommand extends Command
                     if (is_object($opts) && method_exists($opts, '__get')) {
                         $p = $opts->__get('prefix');
                         if (is_string($p) && $p !== '') {
-                            return $p;
+                            return $this->cachedPrefix = $p;
                         }
                     }
                 }
@@ -80,6 +96,6 @@ class SunsetSweepRateLimitSlotsCommand extends Command
         }
 
         // Fallback: the prefix Laravel hands the client at construction time.
-        return (string) config('database.redis.options.prefix', '');
+        return $this->cachedPrefix = (string) config('database.redis.options.prefix', '');
     }
 }

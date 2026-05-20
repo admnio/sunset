@@ -7,10 +7,11 @@ const palette = usePaletteStore();
 </script>
 
 <template>
-  <header class="h-12 bg-sunset-rail border-b border-sunset-border px-4 flex items-center gap-4 text-xs font-mono">
+  <header role="banner" class="h-12 bg-sunset-rail border-b border-sunset-border px-4 flex items-center gap-4 text-xs font-mono">
     <span class="text-sunset-accent font-bold">sunset</span>
     <button
       @click="palette.toggle"
+      aria-label="Open command palette"
       class="ml-auto px-2 py-1 bg-sunset-card border border-sunset-border rounded text-sunset-muted hover:text-sunset-text"
     >⌘K  jump</button>
     <button

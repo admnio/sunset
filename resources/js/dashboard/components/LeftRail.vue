@@ -36,13 +36,14 @@ function isActive(href) {
 </script>
 
 <template>
-  <nav class="w-[160px] min-h-[calc(100vh-48px)] bg-sunset-rail border-r border-sunset-border text-xs font-mono p-3 shrink-0">
+  <nav aria-label="Dashboard navigation" class="w-[160px] min-h-[calc(100vh-48px)] bg-sunset-rail border-r border-sunset-border text-xs font-mono p-3 shrink-0">
     <div v-for="group in groups" :key="group.label" class="mb-4">
       <div class="text-[9px] uppercase tracking-wide text-sunset-muted mb-1">{{ group.label }}</div>
       <Link
         v-for="item in group.items"
         :key="item.href"
         :href="item.href"
+        :aria-current="isActive(item.href) ? 'page' : undefined"
         :class="[
           'block px-2 py-1 rounded transition-colors',
           isActive(item.href)
