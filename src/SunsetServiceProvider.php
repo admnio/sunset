@@ -11,6 +11,7 @@ use Illuminate\Support\ServiceProvider;
 use Admnio\Sunset\Console\SunsetMigrateHorizonKeysCommand;
 use Admnio\Sunset\Console\SunsetMigrateRedisKeysCommand;
 use Admnio\Sunset\Console\SunsetSweepRateLimitSlotsCommand;
+use Admnio\Sunset\Console\SunsetSweepWorkerMetricsCommand;
 use Admnio\Sunset\Console\SweepDelayedCommand;
 use Admnio\Sunset\Console\SunsetWorkCommand;
 use Admnio\Sunset\Console\SunsetSuperviseCommand;
@@ -368,6 +369,9 @@ class SunsetServiceProvider extends ServiceProvider
 
                 // v0.7.0 rate-limit maintenance:
                 SunsetSweepRateLimitSlotsCommand::class,
+
+                // v1.1.0 worker-metrics maintenance:
+                SunsetSweepWorkerMetricsCommand::class,
             ]);
         }
 
@@ -465,6 +469,16 @@ class SunsetServiceProvider extends ServiceProvider
                 ->everyMinute()
                 ->withoutOverlapping()
                 ->name('sunset-sweep-rate-limit-slots');
+
+            // v1.1.0: Safety-net reconciliation for worker telemetry. The
+            // Looping listener writes 30s-TTL hashes and 600s-TTL series; if
+            // a worker dies between reports its PID lingers in the registry
+            // set and the series keys orbit with no anchor. This sweep prunes
+            // both. Runs every minute alongside the rate-limit sweep.
+            $schedule->command(SunsetSweepWorkerMetricsCommand::class)
+                ->everyMinute()
+                ->withoutOverlapping()
+                ->name('sunset-sweep-worker-metrics');
 
             // Register transport connectors in booted() so any vendor provider
             // that also registers a connector under the same name (e.g.
