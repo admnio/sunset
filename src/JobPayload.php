@@ -2,19 +2,13 @@
 
 namespace Admnio\Sunset;
 
+use Admnio\Sunset\Contracts\Silenced;
 use ArrayAccess;
 use Illuminate\Broadcasting\BroadcastEvent;
 use Illuminate\Events\CallQueuedListener;
 use Illuminate\Mail\SendQueuedMailable;
 use Illuminate\Notifications\SendQueuedNotifications;
 use Illuminate\Support\Arr;
-// NOTE: `Laravel\Horizon\Tags` and `Laravel\Horizon\Contracts\Silenced` are
-// intentionally imported here for internal helper-method use. They are NOT
-// part of Sunset's public API surface. When v1.0.0 drops the laravel/horizon
-// dep, port `Tags::for()` into Admnio\Sunset\Tags and define our own Silenced
-// marker interface in Admnio\Sunset\Contracts.
-use Laravel\Horizon\Contracts\Silenced;
-use Laravel\Horizon\Tags;
 
 class JobPayload implements ArrayAccess
 {
@@ -90,9 +84,9 @@ class JobPayload implements ArrayAccess
         $underlying = $this->underlyingJob($job);
         $jobClass = is_string($underlying) ? $underlying : get_class($underlying);
 
-        return in_array($jobClass, config('horizon.silenced', []))
+        return in_array($jobClass, (array) config('sunset.silenced', config('horizon.silenced', [])), true)
             || is_a($jobClass, Silenced::class, true)
-            || count(array_intersect($tags, config('horizon.silenced_tags', []))) > 0;
+            || count(array_intersect($tags, (array) config('sunset.silenced_tags', config('horizon.silenced_tags', [])))) > 0;
     }
 
     protected function underlyingJob(mixed $job): mixed

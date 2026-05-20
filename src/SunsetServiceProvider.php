@@ -8,16 +8,6 @@ use Illuminate\Contracts\Queue\Factory as QueueFactory;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Illuminate\Queue\QueueManager;
 use Illuminate\Support\ServiceProvider;
-use Laravel\Horizon\Contracts\MetricsRepository;
-use Laravel\Horizon\Contracts\SupervisorRepository;
-use Laravel\Horizon\Contracts\WorkloadRepository;
-use Admnio\Sunset\Adapters\Horizon\HorizonJobRepositoryAdapter;
-use Admnio\Sunset\Adapters\Horizon\HorizonTagRepositoryAdapter;
-use Admnio\Sunset\Adapters\Horizon\HorizonMetricsRepositoryAdapter;
-use Admnio\Sunset\Adapters\Horizon\HorizonMasterSupervisorRepositoryAdapter;
-use Admnio\Sunset\Adapters\Horizon\HorizonSupervisorRepositoryAdapter;
-use Admnio\Sunset\Adapters\Horizon\HorizonProcessRepositoryAdapter;
-use Admnio\Sunset\Adapters\Horizon\HorizonSupervisorCommandQueueAdapter;
 use Admnio\Sunset\Console\SunsetMigrateHorizonKeysCommand;
 use Admnio\Sunset\Console\SunsetMigrateRedisKeysCommand;
 use Admnio\Sunset\Console\SunsetSweepRateLimitSlotsCommand;
@@ -49,6 +39,7 @@ use Admnio\Sunset\Contracts\MasterSupervisorRepository as SunsetMasterSupervisor
 use Admnio\Sunset\Contracts\SupervisorRepository as SunsetSupervisorRepository;
 use Admnio\Sunset\Contracts\ProcessRepository as SunsetProcessRepository;
 use Admnio\Sunset\Contracts\SupervisorCommandQueue as SunsetSupervisorCommandQueue;
+use Admnio\Sunset\Contracts\WorkloadRepository as SunsetWorkloadRepositoryContract;
 use Admnio\Sunset\Repositories\Redis\RedisMasterSupervisorRepository;
 use Admnio\Sunset\Repositories\Redis\RedisSupervisorRepository;
 use Admnio\Sunset\Repositories\Redis\RedisProcessRepository;
@@ -225,8 +216,6 @@ class SunsetServiceProvider extends ServiceProvider
             );
         });
 
-        $this->app->singleton(WorkloadRepository::class, $this->workloadRepositoryFactory());
-
         // Bind Sunset contracts to Redis implementations.
         $this->app->singleton(SunsetJobRepository::class, RedisJobRepository::class);
         $this->app->singleton(SunsetFailedJobRepository::class, RedisFailedJobRepository::class);
@@ -239,21 +228,46 @@ class SunsetServiceProvider extends ServiceProvider
         $this->app->singleton(SunsetProcessRepository::class, RedisProcessRepository::class);
         $this->app->singleton(SunsetSupervisorCommandQueue::class, RedisSupervisorCommandQueue::class);
 
-        // Bind Horizon contracts to our adapters (initial binding in register()).
-        // These will be re-bound in boot() to win against Horizon's own register()
-        // which runs after ours and overwrites these.
-        $this->bindHorizonAdapters();
-
-        // v0.5.0: Bind Horizon supervisor contracts to Sunset adapters (initial binding).
-        $this->bindSupervisorAdapters();
+        // v0.8.0: Bind Sunset WorkloadRepository contract to the native
+        // implementation. (Previously bound to Horizon's WorkloadRepository
+        // contract via an adapter; Horizon is gone in v0.8.0.)
+        $this->app->singleton(SunsetWorkloadRepositoryContract::class, $this->workloadRepositoryFactory());
     }
 
     public function boot(): void
     {
+        // v0.8.0: Load the dashboard routes. The route group itself applies
+        // Authorize + Inertia middleware and prefixes with sunset.dashboard.path
+        // (falling back to top-level 'path' for users mid-upgrade).
+        $this->loadRoutesFrom(__DIR__ . '/../routes/sunset.php');
+
+        // v0.8.0: Register the package views under the `sunset` namespace so
+        // the Inertia root view (`sunset::sunset-app`) can be resolved by the
+        // dashboard middleware without forcing consumers to publish them.
+        $this->loadViewsFrom(__DIR__ . '/../resources/views', 'sunset');
+
         if ($this->app->runningInConsole()) {
             $this->publishes([
                 __DIR__ . '/../config/sunset.php' => config_path('sunset.php'),
             ], 'sunset-config');
+
+            // v0.8.0: Publish the pre-built dashboard bundle. The source files
+            // only exist after `npm run build` runs — for distribution they are
+            // committed into `public-dist/` so they ship in the Composer
+            // package. If absent, Laravel's vendor:publish silently skips them.
+            $this->publishes([
+                __DIR__ . '/../public-dist/app.js'  => public_path('vendor/sunset/app.js'),
+                __DIR__ . '/../public-dist/app.css' => public_path('vendor/sunset/app.css'),
+            ], 'sunset-assets');
+
+            // v0.8.0: Optional override of the Inertia root view. Consumers
+            // shouldn't need this for normal use (the view is loaded under the
+            // `sunset` namespace), but publishing lets them customize CSP
+            // nonces, asset paths, or layout chrome.
+            $this->publishes([
+                __DIR__ . '/../resources/views/sunset-app.blade.php' =>
+                    resource_path('views/vendor/sunset/sunset-app.blade.php'),
+            ], 'sunset-views');
 
             $this->commands([
                 // v0.4.0:
@@ -323,17 +337,6 @@ class SunsetServiceProvider extends ServiceProvider
             );
         }
 
-        // Re-bind WorkloadRepository in boot() to override Horizon's own binding,
-        // since Horizon's ServiceProvider registers after ours (alphabetical order).
-        $this->app->singleton(WorkloadRepository::class, $this->workloadRepositoryFactory());
-
-        // Re-bind Horizon adapters in boot() to win against Horizon's own register(),
-        // which runs after ours and would otherwise overwrite our bindings.
-        $this->bindHorizonAdapters();
-
-        // v0.5.0: Re-bind Horizon supervisor adapters in boot() for the same reason.
-        $this->bindSupervisorAdapters();
-
         // Register Sunset event → listener map.
         $events = $this->app['events'];
 
@@ -370,7 +373,7 @@ class SunsetServiceProvider extends ServiceProvider
             \Admnio\Sunset\RateLimiting\Listeners\ReleaseConcurrencySlots::class
         );
 
-        $this->app->booted(function () use ($events, $sunsetListenerMap) {
+        $this->app->booted(function () {
             $schedule = $this->app->make(Schedule::class);
 
             $schedule->command('sunset:sweep-delayed')
@@ -392,15 +395,6 @@ class SunsetServiceProvider extends ServiceProvider
                 ->withoutOverlapping()
                 ->name('sunset-sweep-rate-limit-slots');
 
-            // Forget any Horizon listeners that may have registered on Sunset
-            // events, then re-register our own listeners.
-            foreach ($sunsetListenerMap as $event => $listeners) {
-                $events->forget($event);
-                foreach ($listeners as $listener) {
-                    $events->listen($event, $listener);
-                }
-            }
-
             // Register transport connectors in booted() so any vendor provider
             // that also registers a connector under the same name (e.g.
             // `vladimir-yuldashev/laravel-queue-rabbitmq`) runs FIRST in its
@@ -417,76 +411,6 @@ class SunsetServiceProvider extends ServiceProvider
                 ));
             }
         });
-
-        // v0.5.0: Override Horizon's `horizon` artisan command with our stub.
-        // We use booted() so this runs after HorizonServiceProvider::boot() has
-        // registered Horizon's own `horizon` command; our add() call overwrites it.
-        $this->app->booted(function () {
-            if (! $this->app->runningInConsole()) {
-                return;
-            }
-            \Illuminate\Console\Application::starting(function ($artisan) {
-                $artisan->add(
-                    $this->app->make(\Admnio\Sunset\Console\SunsetHorizonRemovedCommand::class)
-                );
-            });
-        });
-    }
-
-    private function bindSupervisorAdapters(): void
-    {
-        $this->app->singleton(
-            \Laravel\Horizon\Contracts\MasterSupervisorRepository::class,
-            fn ($app) => new HorizonMasterSupervisorRepositoryAdapter(
-                $app->make(SunsetMasterSupervisorRepository::class)
-            )
-        );
-
-        $this->app->singleton(
-            \Laravel\Horizon\Contracts\SupervisorRepository::class,
-            fn ($app) => new HorizonSupervisorRepositoryAdapter(
-                $app->make(SunsetSupervisorRepository::class)
-            )
-        );
-
-        $this->app->singleton(
-            \Laravel\Horizon\Contracts\ProcessRepository::class,
-            fn ($app) => new HorizonProcessRepositoryAdapter(
-                $app->make(SunsetProcessRepository::class)
-            )
-        );
-
-        $this->app->singleton(
-            \Laravel\Horizon\Contracts\HorizonCommandQueue::class,
-            fn ($app) => new HorizonSupervisorCommandQueueAdapter(
-                $app->make(SunsetSupervisorCommandQueue::class)
-            )
-        );
-    }
-
-    private function bindHorizonAdapters(): void
-    {
-        $this->app->singleton(
-            \Laravel\Horizon\Contracts\JobRepository::class,
-            fn ($app) => new HorizonJobRepositoryAdapter(
-                $app->make(SunsetJobRepository::class),
-                $app->make(SunsetFailedJobRepository::class),
-            )
-        );
-
-        $this->app->singleton(
-            \Laravel\Horizon\Contracts\TagRepository::class,
-            fn ($app) => new HorizonTagRepositoryAdapter(
-                $app->make(SunsetTagRepository::class)
-            )
-        );
-
-        $this->app->singleton(
-            MetricsRepository::class,
-            fn ($app) => new HorizonMetricsRepositoryAdapter(
-                $app->make(SunsetMetricsRepository::class),
-            )
-        );
     }
 
     private function workloadRepositoryFactory(): \Closure
@@ -494,8 +418,8 @@ class SunsetServiceProvider extends ServiceProvider
         return function ($app) {
             return new SunsetWorkloadRepository(
                 transports: $app->make(TransportRegistry::class),
-                metrics: $app->make(MetricsRepository::class),
-                supervisors: $app->make(SupervisorRepository::class),
+                metrics: $app->make(SunsetMetricsRepository::class),
+                supervisors: $app->make(SunsetSupervisorRepository::class),
                 cache: $app->make(Cache::class),
                 queues: $this->resolveQueueList($app),
                 cacheTtlSeconds: (int) $app['config']->get('sunset.workload_cache_ttl', 5),

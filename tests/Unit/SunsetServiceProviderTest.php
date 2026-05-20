@@ -12,9 +12,9 @@ class SunsetServiceProviderTest extends TestCase
         $this->assertSame(5, config('sunset.workload_cache_ttl'));
     }
 
-    public function test_workload_repository_binding_swapped(): void
+    public function test_workload_repository_contract_resolves_to_sunset_implementation(): void
     {
-        $resolved = $this->app->make(\Laravel\Horizon\Contracts\WorkloadRepository::class);
+        $resolved = $this->app->make(\Admnio\Sunset\Contracts\WorkloadRepository::class);
 
         $this->assertInstanceOf(
             \Admnio\Sunset\Repositories\SunsetWorkloadRepository::class,
@@ -87,44 +87,6 @@ class SunsetServiceProviderTest extends TestCase
         );
     }
 
-    public function test_horizon_repository_contracts_resolve_to_sunset_adapters(): void
-    {
-        $this->assertInstanceOf(
-            \Admnio\Sunset\Adapters\Horizon\HorizonJobRepositoryAdapter::class,
-            $this->app->make(\Laravel\Horizon\Contracts\JobRepository::class)
-        );
-        $this->assertInstanceOf(
-            \Admnio\Sunset\Adapters\Horizon\HorizonTagRepositoryAdapter::class,
-            $this->app->make(\Laravel\Horizon\Contracts\TagRepository::class)
-        );
-        $this->assertInstanceOf(
-            \Admnio\Sunset\Adapters\Horizon\HorizonMetricsRepositoryAdapter::class,
-            $this->app->make(\Laravel\Horizon\Contracts\MetricsRepository::class)
-        );
-    }
-
-    public function test_horizon_listeners_are_not_registered_for_sunset_events(): void
-    {
-        $events = $this->app['events'];
-        foreach ([
-            \Admnio\Sunset\Events\JobQueueing::class,
-            \Admnio\Sunset\Events\JobQueued::class,
-            \Admnio\Sunset\Events\JobReserved::class,
-            \Admnio\Sunset\Events\JobReleased::class,
-            \Admnio\Sunset\Events\JobCompleted::class,
-            \Admnio\Sunset\Events\JobFailed::class,
-        ] as $eventClass) {
-            foreach ($events->getListeners($eventClass) as $listener) {
-                $repr = is_object($listener) ? get_class($listener) : (string) $listener;
-                $this->assertStringNotContainsString(
-                    'Laravel\\Horizon\\Listeners',
-                    $repr,
-                    "Sunset event {$eventClass} should not have Horizon listeners"
-                );
-            }
-        }
-    }
-
     public function test_sunset_listeners_are_registered_for_each_sunset_event(): void
     {
         $events = $this->app['events'];
@@ -169,26 +131,6 @@ class SunsetServiceProviderTest extends TestCase
         $this->assertInstanceOf(
             \Admnio\Sunset\Repositories\Redis\RedisSupervisorCommandQueue::class,
             $this->app->make(\Admnio\Sunset\Contracts\SupervisorCommandQueue::class)
-        );
-    }
-
-    public function test_horizon_supervisor_contracts_resolve_to_sunset_adapters(): void
-    {
-        $this->assertInstanceOf(
-            \Admnio\Sunset\Adapters\Horizon\HorizonMasterSupervisorRepositoryAdapter::class,
-            $this->app->make(\Laravel\Horizon\Contracts\MasterSupervisorRepository::class)
-        );
-        $this->assertInstanceOf(
-            \Admnio\Sunset\Adapters\Horizon\HorizonSupervisorRepositoryAdapter::class,
-            $this->app->make(\Laravel\Horizon\Contracts\SupervisorRepository::class)
-        );
-        $this->assertInstanceOf(
-            \Admnio\Sunset\Adapters\Horizon\HorizonProcessRepositoryAdapter::class,
-            $this->app->make(\Laravel\Horizon\Contracts\ProcessRepository::class)
-        );
-        $this->assertInstanceOf(
-            \Admnio\Sunset\Adapters\Horizon\HorizonSupervisorCommandQueueAdapter::class,
-            $this->app->make(\Laravel\Horizon\Contracts\HorizonCommandQueue::class)
         );
     }
 

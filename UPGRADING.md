@@ -533,3 +533,81 @@ composer require admnio/sunset:^0.6
 ```
 
 No data migration is required. The new Redis keys (`sunset:rl:*`) self-expire and are unreferenced by older Sunset code.
+
+---
+
+## From v0.7.0 to v0.8.0
+
+v0.8.0 ships the **Sunset SPA dashboard** at `/sunset` AND **drops `laravel/horizon`** from `composer.json`. Single release.
+
+### Breaking changes
+
+- `composer require admnio/sunset` no longer transitively installs `laravel/horizon`. If you depended on Horizon being available because Sunset required it, install it explicitly:
+  ```bash
+  composer require laravel/horizon
+  ```
+- `Admnio\Sunset\Adapters\Horizon\*` adapter classes are deleted. Consumer code that directly referenced them must move to Sunset's native contracts under `Admnio\Sunset\Contracts\*`.
+- `Admnio\Sunset\JobPayload` no longer extends `Laravel\Horizon\JobPayload`. Public surface preserved (`prepare`, `id`, `value`, `decoded`, `tags`).
+- `Admnio\Sunset\Repositories\SunsetWorkloadRepository` implements `Admnio\Sunset\Contracts\WorkloadRepository` (new) instead of Horizon's contract.
+
+### Migration steps
+
+1. **Update composer:**
+   ```bash
+   composer require admnio/sunset:^0.8
+   ```
+
+2. **Optional — drop Horizon if Sunset was the only reason you had it:**
+   ```bash
+   composer remove laravel/horizon
+   ```
+
+3. **Publish the dashboard:**
+   ```bash
+   php artisan sunset:install
+   ```
+   This publishes the compiled JS/CSS bundle to `public/vendor/sunset/` and the dashboard config to `config/sunset.php`.
+
+4. **Register an auth gate** in any service provider:
+   ```php
+   use Admnio\Sunset\Facades\Sunset;
+
+   public function boot(): void
+   {
+       Sunset::auth(fn ($request) => $request->user()?->isAdmin());
+   }
+   ```
+   Without a custom gate, the dashboard is accessible only from localhost outside `local` env.
+
+5. **Visit `/sunset`** in the browser.
+
+### Optional — keep Horizon's dashboard alongside Sunset's
+
+Both can coexist. After step 1 above:
+
+```bash
+composer require laravel/horizon
+```
+
+Both `/horizon` and `/sunset` will be reachable. They register independent bindings — no conflict. If you run both supervisors against the same queue, they will compete for jobs (your responsibility).
+
+### Releases of the package — building the bundle
+
+Sunset ships a pre-built JS/CSS bundle in `public-dist/`. **Maintainers must run `npm run build` before tagging a release.** The build output is committed so consumers don't need Node.js.
+
+If you forked Sunset and want to rebuild the dashboard:
+
+```bash
+npm install
+npm run build
+# Then commit public-dist/app.{js,css} before tagging.
+```
+
+### What's new at a glance
+
+- New facade method: `Sunset::auth(\Closure)`
+- New contract: `Admnio\Sunset\Contracts\WorkloadRepository`
+- New middleware: `Admnio\Sunset\Dashboard\Http\Middleware\Authorize`
+- New artisan commands: none (the existing `sunset:install` was extended to publish the bundle)
+- New config: `sunset.dashboard.path`, `sunset.dashboard.poll_interval_seconds`
+- New routes: 20 (12 GET pages + 8 POST actions) under `/sunset`

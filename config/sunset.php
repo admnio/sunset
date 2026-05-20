@@ -5,6 +5,21 @@ return [
 
     'workload_cache_ttl' => 5,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Dashboard (v0.8.0)
+    |--------------------------------------------------------------------------
+    |
+    | URL prefix and same-route JSON poll cadence for the Sunset dashboard.
+    | The route group also falls back to top-level 'path' if dashboard.path
+    | is unset, so deployments upgrading from older configs keep working.
+    */
+
+    'dashboard' => [
+        'path'                  => env('SUNSET_PATH', 'sunset'),
+        'poll_interval_seconds' => (int) env('SUNSET_DASHBOARD_POLL', 3),
+    ],
+
     // Redis key prefix for everything Sunset records (jobs, tags, metrics,
     // failed-job index, etc.). Override only if 'sunset' collides with
     // another namespace in your Redis instance.

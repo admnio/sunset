@@ -2,10 +2,10 @@
 
 namespace Admnio\Sunset;
 
+use Admnio\Sunset\Contracts\MetricsRepository;
 use Admnio\Sunset\Supervisor\Supervisor;
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
 use Illuminate\Support\Collection;
-use Laravel\Horizon\Contracts\MetricsRepository;
 
 class AutoScaler
 {
@@ -19,7 +19,7 @@ class AutoScaler
     /**
      * The metrics repository implementation.
      *
-     * @var \Laravel\Horizon\Contracts\MetricsRepository
+     * @var \Admnio\Sunset\Contracts\MetricsRepository
      */
     public $metrics;
 
@@ -27,7 +27,7 @@ class AutoScaler
      * Create a new auto-scaler instance.
      *
      * @param  \Illuminate\Contracts\Queue\Factory  $queue
-     * @param  \Laravel\Horizon\Contracts\MetricsRepository  $metrics
+     * @param  \Admnio\Sunset\Contracts\MetricsRepository  $metrics
      * @return void
      */
     public function __construct(QueueFactory $queue, MetricsRepository $metrics)

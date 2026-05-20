@@ -7,8 +7,8 @@ use Admnio\Sunset\Repositories\SunsetWorkloadRepository;
 use Admnio\Sunset\Support\TransportRegistry;
 use Admnio\Sunset\Tests\TestCase;
 use Illuminate\Contracts\Cache\Repository as Cache;
-use Laravel\Horizon\Contracts\MetricsRepository;
-use Laravel\Horizon\Contracts\SupervisorRepository;
+use Admnio\Sunset\Contracts\MetricsRepository;
+use Admnio\Sunset\Contracts\SupervisorRepository;
 use Mockery;
 
 class SunsetWorkloadRepositoryTest extends TestCase

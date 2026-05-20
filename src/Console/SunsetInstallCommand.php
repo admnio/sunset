@@ -31,10 +31,20 @@ class SunsetInstallCommand extends Command
     {
         $this->components->info('Installing Sunset resources.');
 
+        $bundle = __DIR__ . '/../../public-dist/app.js';
+        if (! file_exists($bundle)) {
+            $this->components->warn(
+                'Dashboard bundle not found at ' . $bundle . '. '
+                . 'The dashboard JS/CSS will not be published until the bundle '
+                . 'is built (npm run build) and shipped with the package.'
+            );
+        }
+
         collect([
             'Configuration' => fn () => $this->callSilent('vendor:publish', ['--tag' => 'sunset-config']) == 0,
+            'Dashboard assets' => fn () => $this->callSilent('vendor:publish', ['--tag' => 'sunset-assets', '--force' => true]) == 0,
         ])->each(fn ($task, $description) => $this->components->task($description, $task));
 
-        $this->components->info('Sunset scaffolding installed successfully.');
+        $this->components->info('Sunset scaffolding installed successfully. Visit /sunset to see the dashboard.');
     }
 }

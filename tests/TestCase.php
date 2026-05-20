@@ -10,8 +10,8 @@ abstract class TestCase extends Orchestra
     protected function getPackageProviders($app): array
     {
         return [
-            \Laravel\Horizon\HorizonServiceProvider::class,
             SunsetServiceProvider::class,
+            // Inertia's ServiceProvider auto-discovers via Composer; no need to list it here.
         ];
     }
 
