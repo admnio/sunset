@@ -688,3 +688,62 @@ The Supervisors dashboard route gains two new top-level props (`worker_metrics`,
 ## Scheduled command
 
 `sunset:sweep-worker-metrics` is auto-registered with the scheduler at `everyMinute()->withoutOverlapping()`. Make sure `php artisan schedule:run` is wired in your cron (it already needs to be for the existing `sunset:sweep-rate-limit-slots` and long-delay sweep).
+
+---
+
+# Upgrading from `admnio/sunset` v1.1.x to v1.2.0
+
+**No action required.** v1.2.0 is purely additive over v1.1.x.
+
+## What you get for free
+
+A new `/sunset/activity` dashboard page renders a live event feed (job failures, rate-limit rejections, worker restarts, supervisor deployments) via Server-Sent Events. The recorder begins capturing events the moment Sunset boots; no opt-in needed.
+
+## New config block
+
+If you re-publish the config (`php artisan vendor:publish --tag=sunset-config --force`), you'll see the new `activity` block:
+
+```php
+'activity' => [
+    'enabled' => env('SUNSET_ACTIVITY_ENABLED', true),
+    'stream_buffer_size' => (int) env('SUNSET_ACTIVITY_BUFFER', 5000),
+    'max_connection_seconds' => (int) env('SUNSET_ACTIVITY_MAX_CONNECTION', 60),
+    'heartbeat_interval_seconds' => (int) env('SUNSET_ACTIVITY_HEARTBEAT', 15),
+    'poll_interval_seconds' => (int) env('SUNSET_ACTIVITY_POLL', 5),
+],
+```
+
+Defaults work for most deployments. If you don't re-publish, the defaults still apply (the SP merges them in).
+
+## Laravel Octane caveat
+
+The SSE stream endpoint blocks a worker for up to `max_connection_seconds` (default 60). Under Octane (Swoole/RoadRunner) each connected dashboard tab consumes one of your worker slots for that duration. Two options:
+
+1. **Run the dashboard tier in FPM** — Octane handles the rest of the app, FPM serves `/sunset/*`. Wire a separate fastcgi-pass directive for the path prefix.
+2. **Disable streaming** — `SUNSET_ACTIVITY_ENABLED=false`. The dashboard still renders the Activity page with the most recent 200 buffered events (just without live updates).
+
+Standalone PHP-FPM, Apache+mod_php, Roadrunner-without-task-workers, etc. are unaffected — the SSE endpoint behaves like any other long-running request to those servers.
+
+## New public API surface
+
+These are stable for v1.x:
+
+- `Admnio\Sunset\Contracts\ActivityRepository` — read interface (`recent`, `since`, `before`).
+- `Admnio\Sunset\Activity\ActivityEvent` — readonly value object (`id`, `type`, `occurred_at`, `payload`).
+- `Admnio\Sunset\Events\ActivityRecorded` — fires after each event lands in the buffer. Subscribe to forward to Slack / audit log / Datadog:
+
+  ```php
+  Event::listen(\Admnio\Sunset\Events\ActivityRecorded::class, function ($e) {
+      if ($e->event->type === 'job_failed') {
+          // forward $e->event->payload to your external system
+      }
+  });
+  ```
+
+## Streaming model — server cursor-poll, not Redis pub/sub
+
+The "stream" is technically a fast server-side cursor poll (default 5s) over a capped Redis sorted set, served as Server-Sent Events to the browser. We picked this over true Redis pub/sub because pub/sub semantics differ subtly between phpredis and predis around blocking reads + read timeouts + heartbeat timers, and the fiddliness wasn't worth it for shipping v1.2.0 against three transport libraries. Sub-second freshness becomes a v1.2.x optimization if anyone asks.
+
+## Buffer size considerations
+
+`stream_buffer_size` defaults to 5000 events. At a steady ~10 events/second this is ~8 minutes of replay history — enough for most operators arriving at the dashboard to see what just happened. Bump it up to 50000 if you want longer replay (~83 minutes); the cost is more Redis memory (~150 bytes/event × 50000 = ~7.5 MB).

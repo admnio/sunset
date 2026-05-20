@@ -2,6 +2,25 @@
 
 All notable changes to Sunset are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and Sunset adheres to [Semantic Versioning](https://semver.org/).
 
+## v1.2.0
+
+Realtime worker activity stream — a new `/sunset/activity` dashboard page powered by Server-Sent Events.
+
+### Added
+- `Admnio\Sunset\Contracts\ActivityRepository` (public contract) with `recent(limit)`, `since(after_id, limit)`, `before(before_id, limit)`. Default Redis implementation lives at `Admnio\Sunset\Repositories\Redis\RedisActivityRepository`.
+- `Admnio\Sunset\Activity\ActivityEvent` (public readonly value object) — `id, type, occurred_at, payload`. `toArray()` / `fromArray()` / `toJson()` / `fromJson()` for serialization.
+- `Admnio\Sunset\Events\ActivityRecorded` (public event) — fires after each event lands in the buffer. Consumers subscribe to forward activity to Slack / audit logs / Datadog.
+- `ActivityRecorder` listener subscribes to 8 Sunset events: `JobFailed`, `JobCompleted`, `JobRateLimited`, `JobQueued`, `WorkerProcessRestarting`, `UnableToLaunchProcess`, `LongWaitDetected`, `MasterSupervisorDeployed`. Translates each into an `ActivityEvent`, writes to a capped Redis sorted set with INCR-assigned monotonic ids, fires `ActivityRecorded`.
+- `Admnio\Sunset\Activity\ActivityStreamer` — pure cursor-poll SSE generator with `Last-Event-ID` resume, heartbeat (default 15s), and max-connection-seconds (default 60).
+- `Admnio\Sunset\Dashboard\Http\Controllers\ActivityController` — `show()` Inertia render, `page()` paginated JSON (`?before_id=`), `stream()` SSE response with proxy-friendly headers (`Cache-Control: no-cache, no-transform, no-store`, `X-Accel-Buffering: no`, `Connection: close`).
+- New `Activity.vue` dashboard page: live event log with category filter chips (`all` / `errors` (default) / `lifecycle` / `supervisor`), pause/resume with queue-while-paused count, click-to-expand JSON payload, "load older" pagination, 1000-event client ring buffer.
+- Config block `sunset.activity.{enabled, stream_buffer_size, max_connection_seconds, heartbeat_interval_seconds, poll_interval_seconds}` with env-var hooks (`SUNSET_ACTIVITY_*`).
+- LeftRail nav now shows "activity" between "home" and "workload" under the Overview group.
+
+### Notes
+- We chose a server-side cursor-poll model (default 5s) over Redis pub/sub. pub/sub semantics differ subtly between phpredis and predis around blocking reads + read timeouts + heartbeat timers, and the fiddliness wasn't worth it for v1.2.0 against three transport libraries. "Stream" here means "the server polls Redis every 5s and forwards new events as SSE frames," not "Redis pushes directly to the connection." Sub-second freshness becomes a v1.2.x optimization if anyone asks.
+- Under Laravel Octane, each connected dashboard tab consumes a worker slot for up to `max_connection_seconds`. README documents two mitigations: route `/sunset/*` to a separate FPM tier, or disable streaming with `SUNSET_ACTIVITY_ENABLED=false`.
+
 ## v1.1.0
 
 Worker telemetry — per-worker RSS and CPU sampled on the queue Looping event and surfaced on the Supervisors dashboard page.
