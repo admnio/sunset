@@ -13,11 +13,9 @@ class SunsetFacadeTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        // Force a single shared LimitRegistry instance per test so the registry
-        // the Manager writes to is the same one we read from below. B6 will
-        // bind LimitRegistry as a singleton in the service provider; until then,
-        // each $container->make(LimitRegistry::class) returns a fresh instance.
-        $this->app->instance(LimitRegistry::class, new LimitRegistry());
+        // LimitRegistry is now bound as a singleton in SunsetServiceProvider.
+        // Reset the singleton instance so each test starts with an empty registry.
+        $this->app->forgetInstance(LimitRegistry::class);
     }
 
     public function test_facade_resolves_to_manager_singleton(): void
