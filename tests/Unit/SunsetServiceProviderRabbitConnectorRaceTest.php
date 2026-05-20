@@ -28,7 +28,6 @@ class SunsetServiceProviderRabbitConnectorRaceTest extends TestCase
         // Sunset registers it directly inside boot() rather than via a
         // booted() callback.
         return [
-            \Laravel\Horizon\HorizonServiceProvider::class,
             SunsetServiceProvider::class,
             LaravelQueueRabbitMQServiceProvider::class,
         ];
