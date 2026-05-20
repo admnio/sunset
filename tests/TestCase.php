@@ -50,7 +50,7 @@ abstract class TestCase extends Orchestra
         $app['config']->set('queue.connections.rabbitmq', [
             'driver' => 'rabbitmq',
             'queue' => 'default',
-            'connection' => env('RABBITMQ_QUEUE_CONNECTION', 'AMQPStream'),
+            'connection' => env('RABBITMQ_QUEUE_CONNECTION', 'default'),
             'hosts' => [[
                 'host' => env('RABBITMQ_HOST', '127.0.0.1'),
                 'port' => (int) env('RABBITMQ_PORT', 5672),
