@@ -611,3 +611,37 @@ npm run build
 - New artisan commands: none (the existing `sunset:install` was extended to publish the bundle)
 - New config: `sunset.dashboard.path`, `sunset.dashboard.poll_interval_seconds`
 - New routes: 20 (12 GET pages + 8 POST actions) under `/sunset`
+
+---
+
+## From v0.9.x to v1.0.0
+
+v1.0.0 is the first stable release. The big-feature work (rate limits, dashboard, supervisor, transports) all landed in 0.x; v1.0 commits to backwards-compatible public API for the lifetime of v1.x.
+
+### What's stable now
+
+See the "Public API" section in README.md for the full list. In short: facade methods, contracts, events, exceptions, value objects, artisan command names, dashboard routes + their props shapes, and the published config keys.
+
+### What's still internal
+
+Everything marked `@internal` in PHPDoc. Most concrete classes under `Admnio\Sunset\Repositories\*`, `Supervisor\*`, `Dashboard\Http\*`, the rate-limit gate internals, and transport queue/connector implementations. Consumers should not extend these — depend on the Contracts interfaces instead.
+
+### Improvements landing in v1.0.0
+
+- **A11y (WCAG 2.1 AA):** Skip-to-content link, ARIA landmarks, focus-visible rings, dialog roles on the command palette, contrast-corrected status pills for light theme.
+- **Perf:** Cached prefix detection in the rate-limit stats repository (one reflection-and-method-existence call per request instead of per poll tick).
+- **Health page:** Live transport reachability probes (Redis ping, SQS list-queues, RabbitMQ TCP), runtime version display (PHP/Laravel/Sunset), Redis key prefix, registered rate-limit count, scheduled-command list.
+- **`@internal` markers** on ~100 internal classes so static analysis surfaces incorrect consumer usage.
+
+### Migration steps
+
+For most consumers, **no action is required**. v1.0.0 is purely additive over v0.9.x.
+
+If you previously relied on a class marked `@internal` in v1.0.0:
+1. Find the corresponding public contract under `Admnio\Sunset\Contracts\*`.
+2. Switch your `use` statement and type hint to the contract.
+3. If your use case isn't covered by a public contract, file an issue — we may surface it as public API in v1.1.
+
+### Release stability commitment
+
+We will not make breaking changes to the public API listed in README's "Public API" section without bumping to v2.0.0. Patches (v1.0.x) ship bug fixes only. Minors (v1.1, v1.2, …) ship additive features and may deprecate (but not remove) APIs.
