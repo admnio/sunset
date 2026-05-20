@@ -18,6 +18,14 @@ class RateLimitStatsRepository
 {
     private const REJECT_PREFIX = 'sunset:rl:rejects:';
 
+    /**
+     * Cache the Redis client prefix once per instance. detectPrefix() performs
+     * reflection-and-method-existence dancing that doesn't change across calls
+     * within the same PHP process (the underlying client doesn't swap prefix
+     * mid-request), so we memoise on first read. Null means "not yet probed".
+     */
+    private ?string $cachedPrefix = null;
+
     public function __construct(
         private RedisFactory $redis,
         private string $connectionName,
@@ -194,22 +202,29 @@ class RateLimitStatsRepository
     /**
      * Detect the Redis client's prefix so we can strip it before reading.
      * (Same logic as SunsetSweepRateLimitSlotsCommand::detectPrefix.)
+     *
+     * Memoised per-instance: the result doesn't change across calls within
+     * the same PHP process, and the dashboard polls this on every tick.
      */
     private function detectPrefix($conn): string
     {
+        if ($this->cachedPrefix !== null) {
+            return $this->cachedPrefix;
+        }
+
         if (method_exists($conn, 'client')) {
             try {
                 $client = $conn->client();
                 if (is_object($client) && method_exists($client, '_prefix')) {
                     $p = $client->_prefix('');
                     if (is_string($p) && $p !== '') {
-                        return $p;
+                        return $this->cachedPrefix = $p;
                     }
                 }
                 if (is_object($client) && method_exists($client, 'getOption') && defined('\\Redis::OPT_PREFIX')) {
                     $p = $client->getOption(\Redis::OPT_PREFIX);
                     if (is_string($p) && $p !== '') {
-                        return $p;
+                        return $this->cachedPrefix = $p;
                     }
                 }
                 if (is_object($client) && method_exists($client, 'getOptions')) {
@@ -217,7 +232,7 @@ class RateLimitStatsRepository
                     if (is_object($opts) && method_exists($opts, '__get')) {
                         $p = $opts->__get('prefix');
                         if (is_string($p) && $p !== '') {
-                            return $p;
+                            return $this->cachedPrefix = $p;
                         }
                     }
                 }
@@ -226,6 +241,6 @@ class RateLimitStatsRepository
             }
         }
 
-        return (string) config('database.redis.options.prefix', '');
+        return $this->cachedPrefix = (string) config('database.redis.options.prefix', '');
     }
 }
