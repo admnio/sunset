@@ -2,11 +2,11 @@
 
 namespace Admnio\Sunset\Repositories;
 
+use Admnio\Sunset\Contracts\MetricsRepository;
+use Admnio\Sunset\Contracts\SupervisorRepository;
+use Admnio\Sunset\Contracts\WorkloadRepository;
 use Admnio\Sunset\Support\TransportRegistry;
 use Illuminate\Contracts\Cache\Repository as Cache;
-use Laravel\Horizon\Contracts\MetricsRepository;
-use Laravel\Horizon\Contracts\SupervisorRepository;
-use Laravel\Horizon\Contracts\WorkloadRepository;
 
 class SunsetWorkloadRepository implements WorkloadRepository
 {
@@ -84,7 +84,8 @@ class SunsetWorkloadRepository implements WorkloadRepository
     /**
      * Aggregate per-queue process counts across all supervisors.
      *
-     * Mirrors {@see \Laravel\Horizon\Repositories\RedisWorkloadRepository::processes()}.
+     * Mirrors Horizon's RedisWorkloadRepository::processes() shape so existing
+     * UI/clients keep working unchanged.
      * Each supervisor record exposes a `processes` map keyed by `connection:queue`
      * (e.g. `sqs:orders`); counts are summed across supervisors per key.
      *
