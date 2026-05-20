@@ -97,7 +97,12 @@ class RabbitQueue extends VendorQueue
 
         /** @var DelayedJobStore $store */
         $store = $this->container->make(DelayedJobStore::class);
-        $store->buffer($queueName, $prepared->value, (float) $this->availableAt($delay));
+        $store->buffer(
+            $queueName,
+            $this->getConnectionName() ?? 'rabbitmq',
+            $prepared->value,
+            (float) $this->availableAt($delay)
+        );
 
         event(new JobQueued($connection, $queueName, $prepared));
 

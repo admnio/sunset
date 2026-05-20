@@ -180,7 +180,6 @@ class SunsetServiceProvider extends ServiceProvider
                 store: $app->make(DelayedJobStore::class),
                 queues: $app->make(QueueFactory::class),
                 logger: $app->make(LoggerInterface::class),
-                connectionName: 'sqs',
                 sweepIntervalSeconds: (int) $app['config']->get('sunset.transports.sqs.long_delay_sweep_interval', 60),
             );
         });
