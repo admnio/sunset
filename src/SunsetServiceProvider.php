@@ -108,6 +108,16 @@ class SunsetServiceProvider extends ServiceProvider
             );
         });
 
+        // Alias the concrete RedisLimiter to the Limiter contract binding so
+        // anything that type-hints the concrete class (notably the sweep
+        // command) resolves to the same singleton. Without this the container
+        // tries to auto-construct RedisLimiter and chokes on the unresolvable
+        // string $connectionName constructor parameter.
+        $this->app->singleton(
+            \Admnio\Sunset\RateLimiting\RedisLimiter::class,
+            fn ($app) => $app->make(\Admnio\Sunset\Contracts\Limiter::class)
+        );
+
         $this->app->singleton(\Admnio\Sunset\RateLimiting\RateLimitGate::class, function ($app) {
             return new \Admnio\Sunset\RateLimiting\RateLimitGate(
                 $app->make(\Admnio\Sunset\RateLimiting\LimitRegistry::class),
