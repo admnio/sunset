@@ -4,6 +4,7 @@ namespace Admnio\Sunset\Dashboard\Http\Controllers;
 
 use Admnio\Sunset\RateLimiting\Limit;
 use Admnio\Sunset\RateLimiting\LimitRegistry;
+use Admnio\Sunset\RateLimiting\RateLimitStatsRepository;
 use Admnio\Sunset\RateLimiting\Targets\JobClassTarget;
 use Admnio\Sunset\RateLimiting\Targets\QueueTarget;
 use Illuminate\Http\JsonResponse;
@@ -12,8 +13,11 @@ use Inertia\Response as InertiaResponse;
 
 final class RateLimitsController extends Controller
 {
-    public function show(Request $request, LimitRegistry $registry): InertiaResponse|JsonResponse
-    {
+    public function show(
+        Request $request,
+        LimitRegistry $registry,
+        RateLimitStatsRepository $stats,
+    ): InertiaResponse|JsonResponse {
         $limits = array_map(
             fn (Limit $limit) => $this->serializeLimit($limit),
             $registry->all()
@@ -21,11 +25,7 @@ final class RateLimitsController extends Controller
 
         return $this->inertiaOrJson($request, 'Sunset/RateLimits', [
             'limits'  => $limits,
-            // Reject stats are recorded under sunset:rl:rejects:* keys but
-            // the package doesn't yet expose a public API to read them in
-            // aggregate. Leave the slot in the payload so the page component
-            // can render the column once that API lands.
-            'rejects' => [],
+            'rejects' => $stats->rejectsByLimit(),
         ]);
     }
 

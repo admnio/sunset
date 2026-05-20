@@ -32,6 +32,8 @@ class RouteResolutionTest extends TestCase
             ['GET', 'sunset/jobs/pending'],
             ['GET', 'sunset/jobs/completed'],
             ['GET', 'sunset/metrics'],
+            ['GET', 'sunset/metrics/jobs/{name}'],
+            ['GET', 'sunset/metrics/queues/{name}'],
             ['GET', 'sunset/monitoring'],
             ['GET', 'sunset/rate-limits'],
             ['GET', 'sunset/supervisors'],

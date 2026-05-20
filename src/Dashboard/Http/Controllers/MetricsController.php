@@ -24,9 +24,12 @@ final class MetricsController extends Controller
 
     public function jobSeries(string $job, MetricsRepository $metrics): JsonResponse
     {
+        $snapshots = $metrics->snapshotsForJob($job);
+
         return response()->json([
             'job'        => $job,
-            'snapshots'  => $metrics->snapshotsForJob($job),
+            'snapshots'  => $snapshots,
+            'points'     => $this->normalize($snapshots),
             'throughput' => $metrics->throughputForJob($job),
             'runtime'    => $metrics->runtimeForJob($job),
         ]);
@@ -34,11 +37,38 @@ final class MetricsController extends Controller
 
     public function queueSeries(string $queue, MetricsRepository $metrics): JsonResponse
     {
+        $snapshots = $metrics->snapshotsForQueue($queue);
+
         return response()->json([
             'queue'      => $queue,
-            'snapshots'  => $metrics->snapshotsForQueue($queue),
+            'snapshots'  => $snapshots,
+            'points'     => $this->normalize($snapshots),
             'throughput' => $metrics->throughputForQueue($queue),
             'runtime'    => $metrics->runtimeForQueue($queue),
         ]);
+    }
+
+    /**
+     * Reduce a list of snapshot rows (each `['time' => ..., 'throughput' => ...,
+     * 'runtime' => ...]`) to a normalized 0..1 array of throughput values
+     * suitable for the dashboard's <Sparkline> component.
+     */
+    private function normalize(array $snapshots): array
+    {
+        $values = array_map(
+            static fn ($s) => (float) ($s['throughput'] ?? 0),
+            $snapshots
+        );
+
+        if ($values === []) {
+            return [];
+        }
+
+        $max = max($values);
+        if ($max <= 0) {
+            return array_fill(0, count($values), 0.0);
+        }
+
+        return array_map(static fn ($v) => $v / $max, $values);
     }
 }
