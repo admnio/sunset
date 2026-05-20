@@ -20,6 +20,7 @@ use Admnio\Sunset\Adapters\Horizon\HorizonProcessRepositoryAdapter;
 use Admnio\Sunset\Adapters\Horizon\HorizonSupervisorCommandQueueAdapter;
 use Admnio\Sunset\Console\SunsetMigrateHorizonKeysCommand;
 use Admnio\Sunset\Console\SunsetMigrateRedisKeysCommand;
+use Admnio\Sunset\Console\SunsetSweepRateLimitSlotsCommand;
 use Admnio\Sunset\Console\SweepDelayedCommand;
 use Admnio\Sunset\Console\SunsetWorkCommand;
 use Admnio\Sunset\Console\SunsetSuperviseCommand;
@@ -69,6 +70,7 @@ use Admnio\Sunset\Listeners\MarkJobAsComplete;
 use Admnio\Sunset\Listeners\MarkJobAsFailed;
 use Admnio\Sunset\Listeners\TranslateJobProcessed;
 use Admnio\Sunset\Listeners\TranslateJobFailed;
+use Admnio\Sunset\Manager;
 use Admnio\Sunset\Repositories\Redis\RedisJobRepository;
 use Admnio\Sunset\Repositories\Redis\RedisFailedJobRepository;
 use Admnio\Sunset\Repositories\Redis\RedisTagRepository;
@@ -87,6 +89,45 @@ class SunsetServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/sunset.php', 'sunset');
+
+        $this->app->singleton(Manager::class, fn ($app) => new Manager($app));
+
+        // v0.7.0: Rate-limit infrastructure. LimitRegistry MUST be a singleton
+        // — otherwise Manager::for/limit declarations made in service providers
+        // are silently lost when the registry is re-resolved at pop time.
+        $this->app->singleton(\Admnio\Sunset\RateLimiting\LimitRegistry::class, function ($app) {
+            return new \Admnio\Sunset\RateLimiting\LimitRegistry(
+                $app->make(\Psr\Log\LoggerInterface::class)
+            );
+        });
+
+        $this->app->singleton(\Admnio\Sunset\Contracts\Limiter::class, function ($app) {
+            return new \Admnio\Sunset\RateLimiting\RedisLimiter(
+                $app->make(\Illuminate\Contracts\Redis\Factory::class),
+                $app['config']->get('sunset.redis_connection'),
+            );
+        });
+
+        // Alias the concrete RedisLimiter to the Limiter contract binding so
+        // anything that type-hints the concrete class (notably the sweep
+        // command) resolves to the same singleton. Without this the container
+        // tries to auto-construct RedisLimiter and chokes on the unresolvable
+        // string $connectionName constructor parameter.
+        $this->app->singleton(
+            \Admnio\Sunset\RateLimiting\RedisLimiter::class,
+            fn ($app) => $app->make(\Admnio\Sunset\Contracts\Limiter::class)
+        );
+
+        $this->app->singleton(\Admnio\Sunset\RateLimiting\RateLimitGate::class, function ($app) {
+            return new \Admnio\Sunset\RateLimiting\RateLimitGate(
+                $app->make(\Admnio\Sunset\RateLimiting\LimitRegistry::class),
+                $app->make(\Admnio\Sunset\Contracts\Limiter::class),
+                $app->make(\Illuminate\Contracts\Redis\Factory::class),
+                $app['config']->get('sunset.redis_connection'),
+                (bool) $app['config']->get('sunset.rate_limits.fail_closed', false),
+                $app->make(\Psr\Log\LoggerInterface::class),
+            );
+        });
 
         $this->app->singleton(TransportRegistry::class, function ($app) {
             $registry = new TransportRegistry();
@@ -254,6 +295,9 @@ class SunsetServiceProvider extends ServiceProvider
 
                 // v0.5.0 horizon stub (override):
                 SunsetHorizonRemovedCommand::class,
+
+                // v0.7.0 rate-limit maintenance:
+                SunsetSweepRateLimitSlotsCommand::class,
             ]);
         }
 
@@ -312,6 +356,20 @@ class SunsetServiceProvider extends ServiceProvider
         $events->listen(\Illuminate\Queue\Events\JobProcessed::class, TranslateJobProcessed::class);
         $events->listen(\Illuminate\Queue\Events\JobFailed::class, TranslateJobFailed::class);
 
+        // v0.7.0: Release rate-limit concurrency slots on terminal job events.
+        $events->listen(
+            \Illuminate\Queue\Events\JobProcessed::class,
+            \Admnio\Sunset\RateLimiting\Listeners\ReleaseConcurrencySlots::class
+        );
+        $events->listen(
+            \Illuminate\Queue\Events\JobFailed::class,
+            \Admnio\Sunset\RateLimiting\Listeners\ReleaseConcurrencySlots::class
+        );
+        $events->listen(
+            \Illuminate\Queue\Events\JobExceptionOccurred::class,
+            \Admnio\Sunset\RateLimiting\Listeners\ReleaseConcurrencySlots::class
+        );
+
         $this->app->booted(function () use ($events, $sunsetListenerMap) {
             $schedule = $this->app->make(Schedule::class);
 
@@ -325,6 +383,14 @@ class SunsetServiceProvider extends ServiceProvider
                 ->everyFiveMinutes()
                 ->name('sunset-snapshot')
                 ->withoutOverlapping();
+
+            // v0.7.0: Safety-net reconciliation of orphaned rate-limit
+            // concurrency slots. The listener handles the hot path; this
+            // sweep cleans up leaked slots from crashed workers.
+            $schedule->command('sunset:sweep-rate-limit-slots')
+                ->everyMinute()
+                ->withoutOverlapping()
+                ->name('sunset-sweep-rate-limit-slots');
 
             // Forget any Horizon listeners that may have registered on Sunset
             // events, then re-register our own listeners.
