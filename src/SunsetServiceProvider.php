@@ -257,16 +257,16 @@ class SunsetServiceProvider extends ServiceProvider
             ]);
         }
 
-        $manager = $this->app->make('queue');
-        if ($manager instanceof QueueManager) {
-            $manager->addConnector('sqs', fn () => $this->app->make(SqsConnector::class));
-            $manager->addConnector('redis', fn () => $this->app->make(
-                \Admnio\Sunset\Transports\Redis\RedisConnector::class
-            ));
-            $manager->addConnector('rabbitmq', fn () => $this->app->make(
-                \Admnio\Sunset\Transports\Rabbit\RabbitConnector::class
-            ));
-        }
+        // NOTE: connector registration is deferred to a booted() callback below
+        // so it runs AFTER every other service provider's boot(). Vendor
+        // packages (e.g. vladimir-yuldashev/laravel-queue-rabbitmq) register
+        // their own connectors under names like 'rabbitmq' inside their own
+        // boot(). Real-world Laravel auto-discovery sorts package providers
+        // alphabetically by composer name, so `admnio/sunset` boots before
+        // `vladimir-yuldashev/laravel-queue-rabbitmq`. Registering directly
+        // inside boot() would let the vendor's later boot() overwrite our
+        // binding, defeating the whole subclass. booted() runs after all
+        // boot()s, so our registrations win unconditionally.
 
         // Clean up S3 spillover objects when a job completes successfully on the
         // sqs connection. Listener short-circuits internally when the body is
@@ -333,6 +333,22 @@ class SunsetServiceProvider extends ServiceProvider
                 foreach ($listeners as $listener) {
                     $events->listen($event, $listener);
                 }
+            }
+
+            // Register transport connectors in booted() so any vendor provider
+            // that also registers a connector under the same name (e.g.
+            // `vladimir-yuldashev/laravel-queue-rabbitmq`) runs FIRST in its
+            // boot(); our addConnector() then overwrites theirs and wins. See
+            // SunsetServiceProviderRabbitConnectorRaceTest for the regression.
+            $manager = $this->app->make('queue');
+            if ($manager instanceof QueueManager) {
+                $manager->addConnector('sqs', fn () => $this->app->make(SqsConnector::class));
+                $manager->addConnector('redis', fn () => $this->app->make(
+                    \Admnio\Sunset\Transports\Redis\RedisConnector::class
+                ));
+                $manager->addConnector('rabbitmq', fn () => $this->app->make(
+                    \Admnio\Sunset\Transports\Rabbit\RabbitConnector::class
+                ));
             }
         });
 
