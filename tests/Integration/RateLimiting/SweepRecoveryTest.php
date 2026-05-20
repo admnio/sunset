@@ -2,9 +2,7 @@
 
 namespace Admnio\Sunset\Tests\Integration\RateLimiting;
 
-use Admnio\Sunset\Contracts\Limiter;
 use Admnio\Sunset\RateLimiting\LimitRegistry;
-use Admnio\Sunset\RateLimiting\RedisLimiter;
 use Admnio\Sunset\Tests\Integration\IntegrationTestCase;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Illuminate\Support\Facades\Artisan;
@@ -22,33 +20,12 @@ class SweepRecoveryTest extends IntegrationTestCase
     {
         parent::defineEnvironment($app);
         $app['config']->set('app.key', 'base64:' . base64_encode(random_bytes(32)));
-
-        // Laravel's phpredis client applies a default prefix ("laravel_database_")
-        // pulled from database.redis.options.prefix when not set explicitly.
-        // The SunsetSweepRateLimitSlotsCommand calls $conn->keys() and feeds
-        // the result back into a Lua eval; with a prefix configured, phpredis
-        // re-prefixes the keys returned by keys(), causing the eval to look
-        // up a double-prefixed (non-existent) key. Clearing the prefix here
-        // keeps the command's wire-level key lookups straight. Test-local
-        // override only — other tests retain their existing Redis prefix.
-        $app['config']->set('database.redis.options.prefix', '');
     }
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->app->forgetInstance(LimitRegistry::class);
-
-        // SunsetSweepRateLimitSlotsCommand type-hints RedisLimiter concretely,
-        // not the Limiter contract. The service provider only binds the
-        // contract, so resolving the command via Artisan blows up with an
-        // unresolvable-dependency error. Make the concrete class resolve to
-        // the same singleton the contract is bound to so the command works.
-        $this->app->instance(
-            RedisLimiter::class,
-            $this->app->make(Limiter::class),
-        );
-
         $this->purgeRedisRlState();
     }
 
