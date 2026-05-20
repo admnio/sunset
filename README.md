@@ -29,10 +29,10 @@ This release ships:
 - `sunset:migrate-horizon-config` artisan command for moving `config/horizon.php`'s `environments` block to `config/sunset.php`'s `supervisors`.
 - Fluent rate limiting via the `Admnio\Sunset\Facades\Sunset` facade — sliding-window throttle, concurrency semaphores, per-(queue|job-class) limits, dynamic bucket keys, conditional `when()` guards, and three over-limit strategies (release-computed / release-fixed / drop). Zero overhead when no limits are registered.
 - Worker telemetry (v1.1.0): each `sunset:worker` samples its own RSS and CPU usage on the queue Looping event, throttled to once per 5 seconds (configurable). The Supervisors dashboard page renders per-worker RSS / CPU% columns plus a click-to-toggle sparkline showing the last ~100 seconds. CPU% is best-effort on Windows (PHP's `getrusage()` returns zeros there); RSS works everywhere. Disable entirely with `SUNSET_TELEMETRY_ENABLED=false` if you don't want the Redis traffic.
+- Activity stream (v1.2.0): a new `/sunset/activity` dashboard page renders a live event feed (job failures, rate-limit rejections, worker restarts, supervisor deployments) via Server-Sent Events. Default filter shows errors only; toggle to `lifecycle` to see queued/completed jobs as they happen. Client auto-reconnects with `Last-Event-ID` resume. New `Admnio\Sunset\Events\ActivityRecorded` event lets consumers forward activity to Slack / audit logs / external observability. Backed by a capped Redis sorted set (default 5000 events) — disable with `SUNSET_ACTIVITY_ENABLED=false`.
 
-## Not yet in v1.1.0 (planned)
+## Not yet in v1.2.0 (planned)
 
-- v1.2.0: Realtime worker activity stream
 - v1.3.0: Queue pause/resume controls
 
 ## Quickstart
@@ -117,7 +117,7 @@ All published config keys are stable. Adding new keys is non-breaking; removing 
 
 Interfaces are stable; consumer code should depend on these rather than on concrete implementations:
 
-- `Limiter`, `WorkloadRepository`, `MetricsRepository`, `JobRepository`, `FailedJobRepository`, `TagRepository`, `SupervisorRepository`, `MasterSupervisorRepository`, `ProcessRepository`, `SupervisorCommandQueue`, `Silenced`, `Transport`, `Pausable`, `Restartable`, `Terminable`, `WorkerMetricsRepository`
+- `Limiter`, `WorkloadRepository`, `MetricsRepository`, `JobRepository`, `FailedJobRepository`, `TagRepository`, `SupervisorRepository`, `MasterSupervisorRepository`, `ProcessRepository`, `SupervisorCommandQueue`, `Silenced`, `Transport`, `Pausable`, `Restartable`, `Terminable`, `WorkerMetricsRepository`, `ActivityRepository`
 
 ### Events (`Admnio\Sunset\Events\*`)
 
@@ -125,6 +125,7 @@ Listen to these from your app for job lifecycle hooks:
 
 - `JobQueueing`, `JobQueued`, `JobReserved`, `JobReleased`, `JobCompleted`, `JobFailed`, `JobRateLimited`, `JobEvent`
 - Supervisor lifecycle: `MasterSupervisorDeployed`, `MasterSupervisorLooped`, `SupervisorLooped`, `WorkerProcessRestarting`, `LongWaitDetected`, `UnableToLaunchProcess`
+- Activity: `ActivityRecorded` (fired after each event lands in the activity buffer — useful for forwarding to external observability/audit systems)
 
 ### Exceptions (`Admnio\Sunset\Exceptions\*`)
 
@@ -139,6 +140,7 @@ Catchable by consumer code:
 - `Admnio\Sunset\RateLimiting\Limit`, `LimitBuilder`, `ThrottleSpec`, `ConcurrencySpec`, `Decision`
 - `Admnio\Sunset\RateLimiting\Targets\QueueTarget`, `JobClassTarget`
 - `Admnio\Sunset\Telemetry\WorkerMetricsSnapshot`
+- `Admnio\Sunset\Activity\ActivityEvent`
 
 ### Artisan commands
 
@@ -463,7 +465,8 @@ Both `/horizon` and `/sunset` will work independently. If you run both `horizon`
 - **Visibility timeout:** set on each SQS queue to ≥ your job `timeout` × 1.5. (The `visibility_heartbeat` config knob is reserved for a later release — currently ignored.)
 - **Extended payload cleanup:** add a lifecycle rule to your S3 bucket prefix (default `sunset-payloads/`) to clean up orphans from worker crashes.
 - **Long-delay sweep:** auto-registered via Laravel's scheduler. Ensure `schedule:run` is wired in your cron.
-- **Octane note:** `Sunset::auth(...)` stores its callback in a static property. This is intentional and Octane-safe: each Octane worker boots its service providers once (registering the gate), then reuses the callback across the worker's lifetime of requests. Don't add `Admnio\Sunset\Manager` to Octane's "flush" list — flushing the static would lose the gate. If you need request-scoped auth logic, do it inside the callback (it receives `$request` per-call); don't rely on per-request callback registration.
+- **Octane note (auth):** `Sunset::auth(...)` stores its callback in a static property. This is intentional and Octane-safe: each Octane worker boots its service providers once (registering the gate), then reuses the callback across the worker's lifetime of requests. Don't add `Admnio\Sunset\Manager` to Octane's "flush" list — flushing the static would lose the gate. If you need request-scoped auth logic, do it inside the callback (it receives `$request` per-call); don't rely on per-request callback registration.
+- **Octane note (activity stream):** The `/sunset/activity/stream` SSE endpoint blocks a worker for up to `sunset.activity.max_connection_seconds` (default 60). Under Laravel Octane (Swoole/RoadRunner), each connected dashboard tab consumes one of your worker slots for that duration. Two options for Octane deployments: (1) route `/sunset/*` to a separate FPM tier — Octane handles the rest of the app, FPM serves the dashboard, no worker starvation; (2) set `SUNSET_ACTIVITY_ENABLED=false` to keep the existing 3s polling and skip streaming entirely. The dashboard remains fully functional with streaming off — the Activity page just renders the most recent 200 buffered events without live updates.
 
 ## Migrating from `masonworkforce/horizon-sqs` v0.1.x
 
