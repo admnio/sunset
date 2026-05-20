@@ -36,6 +36,76 @@ This release ships:
 - v1.2.0: Realtime worker activity stream
 - v1.3.0: Queue pause/resume controls
 
+## Public API
+
+Sunset commits to backwards-compatible behavior on these surfaces for the lifetime of major version 1.x. Anything not listed here is internal — see the **Internal — do NOT depend on** section below.
+
+### Configuration (`config/sunset.php`)
+
+All published config keys are stable. Adding new keys is non-breaking; removing or renaming a key is a major version bump.
+
+### Facade
+
+- `Admnio\Sunset\Facades\Sunset::auth(\Closure $callback): void`
+- `Admnio\Sunset\Facades\Sunset::for(string $queueName): LimitBuilder`
+- `Admnio\Sunset\Facades\Sunset::limit(string $jobClass): LimitBuilder`
+
+### Service provider
+
+- `Admnio\Sunset\SunsetServiceProvider` — referenced by Composer auto-discovery and by consumers who need to register the package explicitly.
+
+### Contracts (`Admnio\Sunset\Contracts\*`)
+
+Interfaces are stable; consumer code should depend on these rather than on concrete implementations:
+
+- `Limiter`, `WorkloadRepository`, `MetricsRepository`, `JobRepository`, `FailedJobRepository`, `TagRepository`, `SupervisorRepository`, `MasterSupervisorRepository`, `ProcessRepository`, `SupervisorCommandQueue`, `Silenced`, `Transport`, `Pausable`, `Restartable`, `Terminable`
+
+### Events (`Admnio\Sunset\Events\*`)
+
+Listen to these from your app for job lifecycle hooks:
+
+- `JobQueueing`, `JobQueued`, `JobReserved`, `JobReleased`, `JobCompleted`, `JobFailed`, `JobRateLimited`, `JobEvent`
+- Supervisor lifecycle: `MasterSupervisorDeployed`, `MasterSupervisorLooped`, `SupervisorLooped`, `WorkerProcessRestarting`, `LongWaitDetected`, `UnableToLaunchProcess`
+
+### Exceptions (`Admnio\Sunset\Exceptions\*`)
+
+Catchable by consumer code:
+
+- `RateLimitExceededException`, `ExtendedPayloadException`, `InvalidConfigurationException`
+
+### Value objects (rate limiting + job payload)
+
+- `Admnio\Sunset\JobPayload`, `Admnio\Sunset\Tags`
+- `Admnio\Sunset\Manager`
+- `Admnio\Sunset\RateLimiting\Limit`, `LimitBuilder`, `ThrottleSpec`, `ConcurrencySpec`, `Decision`
+- `Admnio\Sunset\RateLimiting\Targets\QueueTarget`, `JobClassTarget`
+
+### Artisan commands
+
+All `sunset:*` artisan commands are part of the public surface — the command names, signatures, and documented options are stable. The PHP classes implementing them are **not** public API — they may be refactored. Invoke commands via `php artisan sunset:*`, not by instantiating the command class.
+
+### Dashboard routes
+
+The `/sunset/*` routes (configurable via `sunset.dashboard.path`) are part of the public API. Their props shapes for the SPA are stable for major v1.x.
+
+### Internal — do NOT depend on
+
+Everything else, especially classes marked `@internal` in their PHPDoc. This includes:
+
+- Concrete repository implementations under `Admnio\Sunset\Repositories\*`
+- Supervisor internals under `Admnio\Sunset\Supervisor\*`
+- Transport concrete classes (`*Queue`, `*Connector`, `*Transport` implementations under `Admnio\Sunset\Transports\*`)
+- HTTP controllers and middleware under `Admnio\Sunset\Dashboard\*`
+- Rate-limit internals (`RateLimitGate`, `LimitRegistry`, `RedisLimiter`, `RateLimitStatsRepository`, listeners)
+- Job lifecycle listeners under `Admnio\Sunset\Listeners\*`
+- Console command PHP classes under `Admnio\Sunset\Console\*`
+- Supervisor command classes under `Admnio\Sunset\SupervisorCommands\*` and `Admnio\Sunset\MasterSupervisorCommands\*`
+- Support utilities under `Admnio\Sunset\Support\*`
+- The `Admnio\Sunset\AutoScaler` implementation
+- The `Manager` singleton's internal state (only its public method surface listed above is stable)
+
+These may change between minor releases. If you find yourself reaching for an internal class, [file an issue](https://github.com/admnio/sunset/issues) — we may want to surface that API as public.
+
 ## Install
 
 ```bash
