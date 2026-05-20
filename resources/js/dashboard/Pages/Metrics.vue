@@ -1,8 +1,10 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, watch, onMounted } from 'vue';
 import { usePage } from '@inertiajs/vue3';
+import axios from 'axios';
 import { usePolling } from '../composables/usePolling.js';
 import Empty from '../components/Empty.vue';
+import Sparkline from '../components/Sparkline.vue';
 
 const page = usePage();
 const initial = page.props;
@@ -25,16 +27,44 @@ const snapshotLabel = computed(() => {
   return new Date(ts * 1000).toLocaleString();
 });
 
-function fetchJobSeries(name) {
-  // Future enhancement hook: GET /sunset/metrics/jobs/:name returns
-  // { snapshots, throughput, runtime } for inline detail. The index
-  // currently just lists names + the latest snapshot timestamp.
-  return `/sunset/metrics/jobs/${encodeURIComponent(name)}`;
+// Per-name normalized point caches. Cleared whenever the snapshot timestamp
+// advances so sparklines reflect fresh data without a page reload.
+const jobSeries = ref({});
+const queueSeries = ref({});
+
+async function loadJobSeries(name) {
+  try {
+    const resp = await axios.get(`/sunset/metrics/jobs/${encodeURIComponent(name)}`);
+    jobSeries.value[name] = resp.data?.points ?? [];
+  } catch (e) {
+    jobSeries.value[name] = [];
+  }
 }
 
-function fetchQueueSeries(name) {
-  return `/sunset/metrics/queues/${encodeURIComponent(name)}`;
+async function loadQueueSeries(name) {
+  try {
+    const resp = await axios.get(`/sunset/metrics/queues/${encodeURIComponent(name)}`);
+    queueSeries.value[name] = resp.data?.points ?? [];
+  } catch (e) {
+    queueSeries.value[name] = [];
+  }
 }
+
+async function refreshAll() {
+  for (const name of jobNames.value) {
+    await loadJobSeries(name);
+  }
+  for (const name of queueNames.value) {
+    await loadQueueSeries(name);
+  }
+}
+
+onMounted(refreshAll);
+
+// When a new snapshot lands (or the measured-name lists change), refetch the
+// per-name series so the sparklines stay in sync with the polled summary.
+watch(snapshotAt, refreshAll);
+watch([jobNames, queueNames], refreshAll);
 </script>
 
 <template>
@@ -51,12 +81,15 @@ function fetchQueueSeries(name) {
         <div
           v-for="name in queueNames"
           :key="`q:${name}`"
-          class="px-3 py-2 grid grid-cols-[1fr_120px] items-center gap-3 text-xs"
+          class="px-3 py-2 grid grid-cols-[1fr_140px_120px] items-center gap-3 text-xs"
         >
           <div class="truncate font-bold">{{ name }}</div>
+          <div class="text-sunset-accent">
+            <Sparkline :points="queueSeries[name] || []" />
+          </div>
           <div class="text-sunset-muted text-right tabular-nums">
             <span v-if="waitTimes[name] !== undefined">wait {{ waitTimes[name] }}s</span>
-            <span v-else>—</span>
+            <span v-else>&mdash;</span>
           </div>
         </div>
       </div>
@@ -69,9 +102,12 @@ function fetchQueueSeries(name) {
         <div
           v-for="name in jobNames"
           :key="`j:${name}`"
-          class="px-3 py-2 text-xs truncate"
+          class="px-3 py-2 grid grid-cols-[1fr_140px] items-center gap-3 text-xs"
         >
-          {{ name }}
+          <div class="truncate font-mono">{{ name }}</div>
+          <div class="text-sunset-accent">
+            <Sparkline :points="jobSeries[name] || []" />
+          </div>
         </div>
       </div>
     </section>
