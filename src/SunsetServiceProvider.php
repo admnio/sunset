@@ -120,6 +120,16 @@ class SunsetServiceProvider extends ServiceProvider
             );
         });
 
+        // v0.8.2: Read-only view over sunset:rl:rejects:* counters for the
+        // dashboard. Bound as a singleton so resolution is cheap on each
+        // poll cycle; the actual Redis work happens inside rejectsByLimit().
+        $this->app->singleton(\Admnio\Sunset\RateLimiting\RateLimitStatsRepository::class, function ($app) {
+            return new \Admnio\Sunset\RateLimiting\RateLimitStatsRepository(
+                $app->make(\Illuminate\Contracts\Redis\Factory::class),
+                $app['config']->get('sunset.redis_connection'),
+            );
+        });
+
         $this->app->singleton(TransportRegistry::class, function ($app) {
             $registry = new TransportRegistry();
 
