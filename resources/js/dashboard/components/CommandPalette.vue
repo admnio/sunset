@@ -62,27 +62,40 @@ function onKey(e) {
     v-if="palette.open"
     @click.self="palette.hide"
     @keydown="onKey"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Command palette"
     class="fixed inset-0 z-50 flex items-start justify-center pt-32 bg-black/50"
   >
     <div class="bg-sunset-card border border-sunset-border rounded-md w-[500px] max-w-[90vw] font-mono text-sm shadow-2xl">
       <input
         ref="input"
         v-model="query"
+        role="combobox"
+        aria-controls="palette-results"
+        aria-expanded="true"
+        aria-label="Search pages"
         class="w-full bg-transparent border-b border-sunset-border px-4 py-3 text-sunset-text outline-none placeholder:text-sunset-muted"
         placeholder="Jump to page…"
       >
-      <div class="max-h-72 overflow-auto">
+      <div
+        id="palette-results"
+        role="listbox"
+        class="max-h-72 overflow-auto"
+      >
         <button
           v-for="(r, i) in results"
           :key="r.href"
           @click="pick(r.href)"
           @mouseenter="activeIndex = i"
+          role="option"
+          :aria-selected="activeIndex === i"
           :class="[
             'w-full text-left px-4 py-2 text-sunset-text',
             activeIndex === i ? 'bg-sunset-rail' : ''
           ]"
         >{{ r.label }}</button>
-        <div v-if="results.length === 0" class="px-4 py-3 text-sunset-muted text-xs">No matches</div>
+        <div v-if="results.length === 0" role="status" class="px-4 py-3 text-sunset-muted text-xs">No matches</div>
       </div>
     </div>
   </div>
