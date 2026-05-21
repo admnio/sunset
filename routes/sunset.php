@@ -40,6 +40,16 @@ Route::middleware([Authorize::class, \Inertia\Middleware::class, SetSunsetInerti
         Route::post('/jobs/failed/delete',        [C\FailedJobsController::class,  'deleteBulk'])->name('jobs.failed.delete-bulk');
         Route::post('/supervisors/{name}/pause',  [C\SupervisorsController::class, 'pause'])->name('supervisors.pause');
         Route::post('/supervisors/{name}/resume', [C\SupervisorsController::class, 'resume'])->name('supervisors.resume');
+        // v1.3.0: per-queue pause/resume. The `where` constraints allow any
+        // non-slash characters in queue names (queue names commonly include
+        // `-`, `_`, `.`, `:` — e.g. SQS allows `.fifo` suffixes; apps may
+        // namespace queues like `tenant:foo`).
+        Route::post('/workload/{connection}/{queue}/pause',  [C\WorkloadController::class, 'pause'])
+            ->where(['connection' => '[^/]+', 'queue' => '[^/]+'])
+            ->name('workload.pause');
+        Route::post('/workload/{connection}/{queue}/resume', [C\WorkloadController::class, 'resume'])
+            ->where(['connection' => '[^/]+', 'queue' => '[^/]+'])
+            ->name('workload.resume');
         Route::post('/monitoring/{tag}/pin',      [C\MonitoringController::class,  'pin'])->name('monitoring.pin');
         Route::post('/monitoring/{tag}/unpin',    [C\MonitoringController::class,  'unpin'])->name('monitoring.unpin');
     });
