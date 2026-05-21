@@ -816,3 +816,21 @@ Both honour the existing dashboard Authorize middleware. Use Inertia's `router.p
 ## Workload row shape
 
 The `WorkloadRepository::workload()` return value now includes a `connection` key on each row (the source transport name: `'sqs'`, `'redis'`, or `'rabbitmq'`). This is additive — existing consumers reading `name`, `length`, `wait`, `processes`, `split_queues` continue to work unchanged.
+
+## Connection name caveat
+
+The dashboard pause buttons send the *transport name* (`'sqs'`, `'redis'`, `'rabbitmq'`) as the `connection` parameter. The pause gate at `pop()` time checks against `getConnectionName()` — i.e. the connection key from `config/queue.php`. If you alias a connection (e.g. `connections.my-redis` instead of `connections.redis`), the dashboard button's pause will not block that aliased worker because the keys won't match.
+
+Workaround for aliased connections: use the artisan command with the exact connection key from `config/queue.php`:
+
+```bash
+php artisan sunset:pause-queue my-redis high-priority
+```
+
+Or via the public API:
+
+```php
+app(\Admnio\Sunset\Contracts\QueuePauseRepository::class)->pause('my-redis', 'high-priority');
+```
+
+This is a known limitation of v1.3.0 — most consumers use the canonical connection names so the dashboard buttons work fine out of the box.
