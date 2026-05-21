@@ -175,6 +175,38 @@ class SunsetWorkloadRepositoryTest extends TestCase
         $this->assertSame(10, $byName['default']['length']); // 0 (sqs) + 10 (redis)
     }
 
+    public function test_tags_each_row_with_source_transport_as_connection(): void
+    {
+        // v1.3.0: workload rows expose a `connection` field so the dashboard's
+        // per-row pause/resume button knows which (connection, queue) pair to
+        // hit. Transports themselves don't populate this — SunsetWorkloadRepository
+        // stamps it during the merge using the transport's registered name.
+        $sqsTransport = Mockery::mock(Transport::class);
+        $sqsTransport->shouldReceive('name')->andReturn('sqs');
+        $sqsTransport->shouldReceive('workload')->with(['orders'])->andReturn([
+            ['name' => 'orders', 'length' => 7, 'wait' => 0, 'processes' => 0, 'split_queues' => null],
+        ]);
+
+        $registry = new TransportRegistry();
+        $registry->register($sqsTransport);
+
+        $metrics = Mockery::mock(MetricsRepository::class);
+        $metrics->shouldReceive('runtimeForQueue')->andReturn(1.0);
+
+        $supervisors = Mockery::mock(SupervisorRepository::class);
+        $supervisors->shouldReceive('all')->andReturn([]);
+
+        $cache = Mockery::mock(Cache::class);
+        $cache->shouldReceive('remember')->andReturnUsing(fn ($k, $t, $cb) => $cb());
+
+        $repo = new SunsetWorkloadRepository(
+            $registry, $metrics, $supervisors, $cache, ['orders'], 5
+        );
+
+        $workload = $repo->get();
+        $this->assertSame('sqs', $workload[0]['connection']);
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();

@@ -48,6 +48,11 @@ class SunsetWorkloadRepository implements WorkloadRepository
 
             $records[] = [
                 'name' => $queue,
+                // v1.3.0: source transport name (e.g. 'sqs', 'redis', 'rabbitmq')
+                // — surfaced so the dashboard's per-row pause/resume button knows
+                // which (connection, queue) pair to write through the
+                // QueuePauseRepository. Additive, backward-compatible field.
+                'connection' => $entry['connection'] ?? null,
                 'length' => $length,
                 'wait' => (int) round($length * $runtime / $procs),
                 'processes' => $procs,
@@ -75,12 +80,22 @@ class SunsetWorkloadRepository implements WorkloadRepository
         foreach ($this->transports->names() as $name) {
             foreach ($this->transports->get($name)->workload($this->queues) as $record) {
                 $queue = $record['name'];
+                // v1.3.0: tag the record with the transport name so the
+                // dashboard can route pause/resume POSTs to the right
+                // (connection, queue) pair. Transports don't populate this
+                // themselves (kept the per-transport workload() shape stable);
+                // we stamp it during the merge instead.
+                $record['connection'] = $record['connection'] ?? $name;
+
                 if (! isset($merged[$queue])) {
                     $merged[$queue] = $record;
                     continue;
                 }
                 $merged[$queue]['length'] += (int) $record['length'];
                 $merged[$queue]['split_queues'] = $merged[$queue]['split_queues'] ?? ($record['split_queues'] ?? null);
+                // When the same queue name lives in multiple transports, the
+                // FIRST connection we saw wins — matches the existing "first
+                // record wins" semantics for the rest of the row fields.
             }
         }
         return array_values($merged);
