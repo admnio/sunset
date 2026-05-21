@@ -30,10 +30,7 @@ This release ships:
 - Fluent rate limiting via the `Admnio\Sunset\Facades\Sunset` facade — sliding-window throttle, concurrency semaphores, per-(queue|job-class) limits, dynamic bucket keys, conditional `when()` guards, and three over-limit strategies (release-computed / release-fixed / drop). Zero overhead when no limits are registered.
 - Worker telemetry (v1.1.0): each `sunset:worker` samples its own RSS and CPU usage on the queue Looping event, throttled to once per 5 seconds (configurable). The Supervisors dashboard page renders per-worker RSS / CPU% columns plus a click-to-toggle sparkline showing the last ~100 seconds. CPU% is best-effort on Windows (PHP's `getrusage()` returns zeros there); RSS works everywhere. Disable entirely with `SUNSET_TELEMETRY_ENABLED=false` if you don't want the Redis traffic.
 - Activity log (v1.2.0+): a new `/sunset/activity` dashboard page renders the most recent job failures, rate-limit rejections, worker restarts, and supervisor deployments. Polls every 3 seconds (same cadence as every other page). Default filter shows errors only; toggle to `lifecycle` to see queued/completed jobs. New `Admnio\Sunset\Events\ActivityRecorded` event lets consumers forward activity to Slack / audit logs / external observability. Backed by a capped Redis sorted set (default 5000 events) — disable with `SUNSET_ACTIVITY_ENABLED=false`.
-
-## Not yet in v1.2.0 (planned)
-
-- v1.3.0: Queue pause/resume controls
+- Queue pause/resume (v1.3.0): pause individual queues from the Workload page or via `sunset:pause-queue {connection} {queue}` / `sunset:resume-queue` artisan commands. Workers stop popping from paused queues on their next loop iteration (≤ worker sleep interval, default 3s); in-flight jobs continue. Producers can still enqueue — pause is "stop popping," not "stop accepting." Pause/resume actions fire public `QueuePaused` / `QueueResumed` events and show up live in the Activity log. Works uniformly across SQS, Redis, and RabbitMQ. Pause gate fails open on Redis outage — a Redis blip won't halt the fleet.
 
 ## Quickstart
 
@@ -117,7 +114,7 @@ All published config keys are stable. Adding new keys is non-breaking; removing 
 
 Interfaces are stable; consumer code should depend on these rather than on concrete implementations:
 
-- `Limiter`, `WorkloadRepository`, `MetricsRepository`, `JobRepository`, `FailedJobRepository`, `TagRepository`, `SupervisorRepository`, `MasterSupervisorRepository`, `ProcessRepository`, `SupervisorCommandQueue`, `Silenced`, `Transport`, `Pausable`, `Restartable`, `Terminable`, `WorkerMetricsRepository`, `ActivityRepository`
+- `Limiter`, `WorkloadRepository`, `MetricsRepository`, `JobRepository`, `FailedJobRepository`, `TagRepository`, `SupervisorRepository`, `MasterSupervisorRepository`, `ProcessRepository`, `SupervisorCommandQueue`, `Silenced`, `Transport`, `Pausable`, `Restartable`, `Terminable`, `WorkerMetricsRepository`, `ActivityRepository`, `QueuePauseRepository`
 
 ### Events (`Admnio\Sunset\Events\*`)
 
@@ -126,6 +123,7 @@ Listen to these from your app for job lifecycle hooks:
 - `JobQueueing`, `JobQueued`, `JobReserved`, `JobReleased`, `JobCompleted`, `JobFailed`, `JobRateLimited`, `JobEvent`
 - Supervisor lifecycle: `MasterSupervisorDeployed`, `MasterSupervisorLooped`, `SupervisorLooped`, `WorkerProcessRestarting`, `LongWaitDetected`, `UnableToLaunchProcess`
 - Activity: `ActivityRecorded` (fired after each event lands in the activity buffer — useful for forwarding to external observability/audit systems)
+- Queue pause/resume: `QueuePaused`, `QueueResumed` (fired by the repository after each pause/resume action; carry `connection`, `queue`, and an optional `actor` tag)
 
 ### Exceptions (`Admnio\Sunset\Exceptions\*`)
 
