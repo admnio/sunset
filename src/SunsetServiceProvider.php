@@ -32,6 +32,8 @@ use Admnio\Sunset\Console\SunsetInstallCommand;
 use Admnio\Sunset\Console\SunsetPublishCommand;
 use Admnio\Sunset\Console\SunsetMigrateHorizonConfigCommand;
 use Admnio\Sunset\Console\SunsetHorizonRemovedCommand;
+use Admnio\Sunset\Console\SunsetPauseQueueCommand;
+use Admnio\Sunset\Console\SunsetResumeQueueCommand;
 use Admnio\Sunset\Contracts\JobRepository as SunsetJobRepository;
 use Admnio\Sunset\Contracts\FailedJobRepository as SunsetFailedJobRepository;
 use Admnio\Sunset\Contracts\TagRepository as SunsetTagRepository;
@@ -58,6 +60,8 @@ use Admnio\Sunset\Events\JobFailed as SunsetJobFailed;
 use Admnio\Sunset\Events\JobRateLimited;
 use Admnio\Sunset\Events\LongWaitDetected;
 use Admnio\Sunset\Events\MasterSupervisorDeployed;
+use Admnio\Sunset\Events\QueuePaused;
+use Admnio\Sunset\Events\QueueResumed;
 use Admnio\Sunset\Events\UnableToLaunchProcess;
 use Admnio\Sunset\Events\WorkerProcessRestarting;
 use Admnio\Sunset\Repositories\Redis\RedisActivityRepository;
@@ -319,6 +323,31 @@ class SunsetServiceProvider extends ServiceProvider
             );
         });
 
+        // v1.3.0: Queue pause/resume — minimal bindings to make the gate
+        // resolvable from the transports' pop() hot path. The contract is
+        // bound to RedisQueuePauseRepository; the concrete class is aliased
+        // to the contract (mirrors the Limiter/RedisLimiter pattern above).
+        // Task 5 of the v1.3.0 plan will extend this section with the
+        // activity-stream subscription for QueuePaused/QueueResumed.
+        $this->app->singleton(
+            \Admnio\Sunset\Contracts\QueuePauseRepository::class,
+            fn ($app) => new \Admnio\Sunset\Repositories\Redis\RedisQueuePauseRepository(
+                $app->make(\Illuminate\Contracts\Redis\Factory::class),
+                $app->make(\Illuminate\Contracts\Events\Dispatcher::class),
+            )
+        );
+        $this->app->singleton(
+            \Admnio\Sunset\Repositories\Redis\RedisQueuePauseRepository::class,
+            fn ($app) => $app->make(\Admnio\Sunset\Contracts\QueuePauseRepository::class)
+        );
+        $this->app->singleton(\Admnio\Sunset\QueuePause\QueuePauseGate::class, function ($app) {
+            return new \Admnio\Sunset\QueuePause\QueuePauseGate(
+                repository: $app->make(\Admnio\Sunset\Contracts\QueuePauseRepository::class),
+                logger: $app->make(\Psr\Log\LoggerInterface::class),
+                clock: static fn (): float => microtime(true),
+            );
+        });
+
         // Per-process listener singleton. The sampler it lazily constructs
         // accumulates state (lastWall, jobsProcessed, etc.) across events,
         // which is essential for CPU-delta math — making the singleton scope
@@ -414,6 +443,10 @@ class SunsetServiceProvider extends ServiceProvider
 
                 // v1.1.0 worker-metrics maintenance:
                 SunsetSweepWorkerMetricsCommand::class,
+
+                // v1.3.0 queue pause/resume:
+                SunsetPauseQueueCommand::class,
+                SunsetResumeQueueCommand::class,
             ]);
         }
 
@@ -490,12 +523,16 @@ class SunsetServiceProvider extends ServiceProvider
             );
         }
 
-        // v1.2.0: Activity stream — one recorder subscribed to the eight
-        // events that make it into the dashboard's Activity log. Skipping
-        // the subscription when disabled is consistent with the telemetry
+        // v1.2.0: Activity stream — one recorder subscribed to the events
+        // that make it into the dashboard's Activity log. Skipping the
+        // subscription when disabled is consistent with the telemetry
         // pattern above: ActivityRecorder::handle() short-circuits on the
         // same config flag, but not subscribing at all keeps the event
         // dispatcher's listener registry tidy on opt-out deployments.
+        //
+        // v1.3.0 extended this list with QueuePaused / QueueResumed so the
+        // activity stream captures operator pause/resume actions alongside
+        // job and supervisor lifecycle events.
         if ((bool) $this->app['config']->get('sunset.activity.enabled', true)) {
             $events->listen(
                 [
@@ -507,6 +544,8 @@ class SunsetServiceProvider extends ServiceProvider
                     UnableToLaunchProcess::class,
                     LongWaitDetected::class,
                     MasterSupervisorDeployed::class,
+                    QueuePaused::class,
+                    QueueResumed::class,
                 ],
                 [ActivityRecorder::class, 'handle'],
             );

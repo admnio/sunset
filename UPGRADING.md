@@ -755,3 +755,82 @@ Streaming added a per-tab worker-slot cost under Octane that wasn't worth the fr
 For most consumers: **no action required**. Sunset auto-discovers the new code; the page renders normally on the next request.
 
 If you set any of the removed env vars in your deployment config, you can remove them — they're ignored.
+
+---
+
+# Upgrading from `admnio/sunset` v1.2.x to v1.3.0
+
+**No action required.** v1.3.0 is purely additive over v1.2.x.
+
+## What you get for free
+
+- New `PAUSED` indicator + pause/resume button on the existing `/sunset/workload` dashboard page. Click to pause a queue; click again to resume.
+- Two new artisan commands: `sunset:pause-queue {connection} {queue}` and `sunset:resume-queue {connection} {queue}`.
+- New public events `Admnio\Sunset\Events\QueuePaused` and `Admnio\Sunset\Events\QueueResumed`. Subscribe to forward pause actions to your audit log / Slack / observability:
+
+  ```php
+  Event::listen(\Admnio\Sunset\Events\QueuePaused::class, function ($e) {
+      Log::warning("Queue paused: {$e->connection}:{$e->queue}", ['actor' => $e->actor]);
+  });
+  ```
+
+## How pause works
+
+Pause is a soft signal checked at each worker's pop() loop. When a queue is paused:
+- Workers will not pop new jobs from that queue.
+- In-flight jobs (already popped, currently executing) continue to completion.
+- Producers can still enqueue. Jobs accumulate until the queue is resumed.
+- Pause takes effect within one pop cycle — typically ≤ 3 seconds (your worker sleep interval).
+
+The pause flag is stored in a single Redis SET (`sunset:queues:paused`). Persists until explicitly resumed. The pause gate fails open on Redis errors — a Redis blip will not halt your fleet.
+
+## New public API surface
+
+These are stable for v1.x:
+
+- `Admnio\Sunset\Contracts\QueuePauseRepository` — programmatic pause/resume:
+
+  ```php
+  $repo = app(\Admnio\Sunset\Contracts\QueuePauseRepository::class);
+  $repo->pause('redis', 'high-priority', 'my-deploy-script');
+  if ($repo->isPaused('redis', 'high-priority')) { /* ... */ }
+  foreach ($repo->all() as ['connection' => $c, 'queue' => $q]) { /* ... */ }
+  $repo->resume('redis', 'high-priority', 'my-deploy-script');
+  ```
+
+  The optional third `$actor` parameter is a free-form string that gets forwarded into the dispatched `QueuePaused`/`QueueResumed` event. Sunset's own dashboard passes `'dashboard'`; the artisan commands pass `'cli'`. Use whatever helps you trace pause actions in your activity log.
+
+- `Admnio\Sunset\Events\QueuePaused`, `Admnio\Sunset\Events\QueueResumed` — `final readonly` events with `connection`, `queue`, `actor` properties. Activity-stream integration is automatic — both event types appear on `/sunset/activity` under the supervisor filter.
+
+## Activity-log integration
+
+If you have the activity stream enabled (`SUNSET_ACTIVITY_ENABLED=true`, the default), pause/resume actions automatically appear on `/sunset/activity` as `queue_paused` and `queue_resumed` events with `{connection, queue, actor}` payloads. They sit under the "supervisor" filter category alongside worker process restarts and master supervisor deployments.
+
+## Routes added
+
+- `POST /sunset/workload/{connection}/{queue}/pause`
+- `POST /sunset/workload/{connection}/{queue}/resume`
+
+Both honour the existing dashboard Authorize middleware. Use Inertia's `router.post(...)` from custom Vue code if you want to wire your own pause controls outside the Workload page.
+
+## Workload row shape
+
+The `WorkloadRepository::workload()` return value now includes a `connection` key on each row (the source transport name: `'sqs'`, `'redis'`, or `'rabbitmq'`). This is additive — existing consumers reading `name`, `length`, `wait`, `processes`, `split_queues` continue to work unchanged.
+
+## Connection name caveat
+
+The dashboard pause buttons send the *transport name* (`'sqs'`, `'redis'`, `'rabbitmq'`) as the `connection` parameter. The pause gate at `pop()` time checks against `getConnectionName()` — i.e. the connection key from `config/queue.php`. If you alias a connection (e.g. `connections.my-redis` instead of `connections.redis`), the dashboard button's pause will not block that aliased worker because the keys won't match.
+
+Workaround for aliased connections: use the artisan command with the exact connection key from `config/queue.php`:
+
+```bash
+php artisan sunset:pause-queue my-redis high-priority
+```
+
+Or via the public API:
+
+```php
+app(\Admnio\Sunset\Contracts\QueuePauseRepository::class)->pause('my-redis', 'high-priority');
+```
+
+This is a known limitation of v1.3.0 — most consumers use the canonical connection names so the dashboard buttons work fine out of the box.

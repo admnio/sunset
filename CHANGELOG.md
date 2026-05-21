@@ -2,6 +2,27 @@
 
 All notable changes to Sunset are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and Sunset adheres to [Semantic Versioning](https://semver.org/).
 
+## v1.3.0
+
+Per-queue pause/resume controls across SQS, Redis, and RabbitMQ transports.
+
+### Added
+- `Admnio\Sunset\Contracts\QueuePauseRepository` (public contract) with `pause`, `resume`, `isPaused`, `all` methods. The Redis implementation at `Admnio\Sunset\Repositories\Redis\RedisQueuePauseRepository` stores paused queues as members of a single Redis SET (`sunset:queues:paused`) — O(1) check, no TTL.
+- `Admnio\Sunset\Events\QueuePaused` and `Admnio\Sunset\Events\QueueResumed` (public events). Carry `connection`, `queue`, and an optional `actor` field tagging the action's origin (`'dashboard'`, `'cli'`, or `null` for programmatic API).
+- `Admnio\Sunset\QueuePause\QueuePauseGate` (internal) — wraps the repository at `pop()` time. Fails open on Redis throw (returns false → workers continue popping) and logs a throttled warning at most once per 60s. A Redis blip will not halt the fleet.
+- `SqsQueue::pop()`, `RedisQueue::pop()`, `RabbitQueue::pop()` now consult the gate before each pop. When paused, pop returns null and the worker sleeps normally; in-flight jobs continue.
+- `sunset:pause-queue {connection} {queue}` and `sunset:resume-queue {connection} {queue}` artisan commands for CLI / scripted control.
+- New POST routes: `POST /sunset/workload/{connection}/{queue}/pause` and `/resume` with `[^/]+` parameter constraints so queue names containing `-`, `_`, `.`, or `:` work cleanly.
+- Workload dashboard page renders a `PAUSED` pill next to paused queues and a per-row pause/resume button using the existing `ConfirmAction` two-click safety pattern.
+- `ActivityEventFactory` translates `QueuePaused` / `QueueResumed` into `queue_paused` / `queue_resumed` events on the Activity stream. Sits in the supervisor filter category.
+
+### Changed
+- `SunsetWorkloadRepository::mergeWorkloadAcrossTransports()` tags each merged row with its source transport name as `connection`. Required for the dashboard to address `(connection, queue)` on pause/resume. First-transport-wins for queues that appear in multiple transports (matches the existing collision semantics for other row fields).
+
+### Notes
+- Pause is a soft signal — checked at the transport's `pop()` boundary. There's an inherent race: a worker that popped a job a microsecond before the pause flag was set will still process that job. Operators should expect "pause takes effect within one pop cycle" (≤ worker sleep interval, default 3s).
+- Pause does NOT affect producers. Apps can still enqueue to a paused queue; jobs accumulate until resumed. If you need producer-side guards, that's a separate "circuit breaker" pattern outside Sunset's scope.
+
 ## v1.2.1
 
 Drop Server-Sent Events; the Activity page now polls the same way every other dashboard page does.
