@@ -1,41 +1,62 @@
 import { ref } from 'vue';
 
-const theme = ref(null); // 'light' | 'dark' | null (follow OS)
+// Tri-state theme: 'light' | 'dark' | 'system'
+//
+// - The inline script in sunset-app.blade.php sets data-theme before paint to
+//   prevent FOUC. This composable manages the user-visible state ("which choice
+//   did the user pick") and persistence.
+// - The 'system' choice respects `prefers-color-scheme` and listens for OS
+//   changes; the resolved value is written to data-theme on the html element.
 
-function apply(t) {
-  const root = document.documentElement;
-  if (t === 'dark') root.classList.add('dark');
-  else if (t === 'light') root.classList.remove('dark');
-  else {
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    root.classList.toggle('dark', dark);
-  }
+const STORAGE_KEY = 'sunset.theme';
+const choice = ref('system');         // raw user preference
+const effective = ref('dark');         // resolved 'light' | 'dark'
+let mediaQuery = null;
+
+function resolveEffective(pick) {
+  if (pick === 'light' || pick === 'dark') return pick;
+  return mediaQuery && mediaQuery.matches ? 'light' : 'dark';
+}
+
+function apply(pick) {
+  const eff = resolveEffective(pick);
+  document.documentElement.setAttribute('data-theme', eff);
+  effective.value = eff;
 }
 
 export function useTheme() {
   function bootstrap() {
-    const stored = window.localStorage.getItem('sunset.theme');
-    theme.value = stored === 'light' || stored === 'dark' ? stored : null;
-    apply(theme.value);
-
-    if (theme.value === null && window.matchMedia) {
-      const mq = window.matchMedia('(prefers-color-scheme: dark)');
-      if (mq.addEventListener) mq.addEventListener('change', () => apply(null));
+    if (!mediaQuery && typeof window !== 'undefined') {
+      mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
+      mediaQuery.addEventListener?.('change', () => {
+        if (choice.value === 'system') apply('system');
+      });
     }
+    const stored = localStorage.getItem(STORAGE_KEY);
+    choice.value = stored === 'light' || stored === 'dark' ? stored : 'system';
+    apply(choice.value);
   }
 
   function set(t) {
-    theme.value = t;
-    if (t === null) window.localStorage.removeItem('sunset.theme');
-    else window.localStorage.setItem('sunset.theme', t);
+    choice.value = t;
+    if (t === 'system') localStorage.removeItem(STORAGE_KEY);
+    else localStorage.setItem(STORAGE_KEY, t);
     apply(t);
   }
 
-  function toggle() {
-    set(document.documentElement.classList.contains('dark') ? 'light' : 'dark');
+  // Cycle: system -> light -> dark -> system
+  function cycle() {
+    const cur = choice.value;
+    const next = cur === 'system' ? 'light' : cur === 'light' ? 'dark' : 'system';
+    set(next);
   }
 
-  function current() { return theme.value; }
+  // Back-compat with v1 callers (toggle between light/dark only).
+  function toggle() {
+    set(effective.value === 'dark' ? 'light' : 'dark');
+  }
 
-  return { theme, bootstrap, set, toggle, current };
+  function current() { return choice.value; }
+
+  return { choice, effective, bootstrap, set, cycle, toggle, current };
 }
