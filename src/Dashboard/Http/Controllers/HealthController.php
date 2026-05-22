@@ -2,6 +2,7 @@
 
 namespace Admnio\Sunset\Dashboard\Http\Controllers;
 
+use Admnio\Sunset\Dashboard\ProbeCache;
 use Admnio\Sunset\RateLimiting\LimitRegistry;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Illuminate\Http\JsonResponse;
@@ -16,15 +17,67 @@ use Throwable;
  */
 final class HealthController extends Controller
 {
+    public function __construct(private readonly ProbeCache $probeCache)
+    {
+    }
+
     public function show(Request $request): InertiaResponse|JsonResponse
     {
+        $transports = $this->probeTransports();
+        $redis      = $this->probeRedis();
+
+        // Stash a compact summary of probe results so the HealthStrip on
+        // other dashboard pages can render the same pills without re-running
+        // the (potentially slow) probe code on every request.
+        $this->probeCache->record($this->summarizeProbes($transports, $redis));
+
         return $this->inertiaOrJson($request, 'Sunset/Health', [
             'versions'    => $this->versions(),
-            'transports'  => $this->probeTransports(),
-            'redis'       => $this->probeRedis(),
+            'transports'  => $transports,
+            'redis'       => $redis,
             'rate_limits' => $this->rateLimitsSummary(),
             'schedule'    => $this->scheduledCommands(),
         ]);
+    }
+
+    /**
+     * Reduce the detailed probe rows down to the {name, status, latency}
+     * shape the HealthStrip pills consume. Only configured transports are
+     * included — an unconfigured transport in the detail table should not
+     * render a pill on the strip.
+     *
+     * Transport-level redis is skipped in favour of the dedicated dashboard
+     * redis probe so the strip surfaces a single redis pill, not two.
+     *
+     * @param array<int, array<string, mixed>> $transports
+     * @param array<string, mixed>             $redis
+     * @return array<int, array{name: string, status: string, latency: string}>
+     */
+    private function summarizeProbes(array $transports, array $redis): array
+    {
+        $out = [];
+        foreach ($transports as $row) {
+            $name = (string) ($row['name'] ?? 'transport');
+            if ($name === 'redis') {
+                continue; // Dashboard redis probe (below) covers this transport.
+            }
+            if (! ($row['configured'] ?? false)) {
+                continue;
+            }
+            $out[] = [
+                'name'    => $name,
+                'status'  => ($row['reachable'] ?? false) ? 'ok' : 'err',
+                'latency' => isset($row['latency_ms']) ? ((int) $row['latency_ms']) . 'ms' : '',
+            ];
+        }
+        // Sunset's own Redis connection — load-bearing regardless of which
+        // queue transport the consumer app is using.
+        $out[] = [
+            'name'    => 'redis',
+            'status'  => ($redis['reachable'] ?? false) ? 'ok' : 'err',
+            'latency' => isset($redis['latency_ms']) ? ((int) $redis['latency_ms']) . 'ms' : '',
+        ];
+        return $out;
     }
 
     private function versions(): array
