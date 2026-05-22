@@ -139,8 +139,17 @@ a.sr-only:focus-visible { outline: none; }
   font-weight: 500;
   border-radius: 999px;
   line-height: 1.55;
+  letter-spacing: 0;
 }
 .pill .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+/* Class-token form (matches mockup CSS — `.pill.ok` etc.) */
+.pill.ok      { background: var(--green-soft); color: rgb(var(--green)); }
+.pill.warn    { background: var(--amber-soft); color: rgb(var(--amber)); }
+.pill.err     { background: var(--red-soft);   color: rgb(var(--red)); }
+.pill.info    { background: var(--violet-soft); color: rgb(var(--violet)); }
+.pill.blue    { background: var(--blue-soft); color: rgb(var(--blue)); }
+.pill.neutral { background: rgb(var(--bg-3)); color: rgb(var(--muted)); }
+/* Legacy hyphenated form — kept as aliases so any straggler stays styled. */
 .pill-ok    { background: var(--green-soft); color: rgb(var(--green)); }
 .pill-warn  { background: var(--amber-soft); color: rgb(var(--amber)); }
 .pill-error { background: var(--red-soft);   color: rgb(var(--red)); }
@@ -167,3 +176,357 @@ a.sr-only:focus-visible { outline: none; }
 .toast-error   { background: rgb(var(--card)); color: rgb(var(--text)); border: 1px solid rgb(var(--border)); border-left: 3px solid rgb(var(--red)); }
 .toast-success { background: rgb(var(--card)); color: rgb(var(--text)); border: 1px solid rgb(var(--border)); border-left: 3px solid rgb(var(--green)); }
 .toast-warn    { background: rgb(var(--card)); color: rgb(var(--text)); border: 1px solid rgb(var(--border)); border-left: 3px solid rgb(var(--amber)); }
+
+/* ─────────────────────────────────────────────────────────────
+   BUTTONS — refined Linear-style. Used widely across forms,
+   action bars, master-detail headers, and bulk bars.
+   ───────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 13px;
+  font-size: 13px;
+  font-weight: 500;
+  background: rgb(var(--bg-3));
+  color: rgb(var(--text));
+  border: 1px solid rgb(var(--border));
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.btn:hover { background: rgb(var(--card-hover)); border-color: rgb(var(--border-strong)); }
+.btn svg { width: 14px; height: 14px; color: rgb(var(--muted)); transition: color 0.12s; }
+.btn:hover svg { color: rgb(var(--text)); }
+.btn.primary {
+  background: rgb(var(--violet-deep));
+  color: #fff;
+  border-color: rgb(var(--violet));
+  box-shadow: var(--shadow-violet);
+}
+.btn.primary:hover { background: rgb(var(--violet)); }
+.btn.primary svg { color: rgba(255, 255, 255, 0.85); }
+.btn.danger { color: rgb(var(--red)); }
+.btn.danger:hover { background: var(--red-soft); border-color: rgb(var(--red)); }
+.btn.danger svg { color: rgb(var(--red)); }
+.btn.sm { padding: 4px 10px; font-size: 12px; }
+.btn.ghost { background: transparent; border-color: transparent; color: rgb(var(--muted)); }
+.btn.ghost:hover { background: rgb(var(--bg-3)); color: rgb(var(--text)); border-color: transparent; }
+
+/* ─────────────────────────────────────────────────────────────
+   SPARKLINES
+   ───────────────────────────────────────────────────────────── */
+
+svg.spark { display: inline-block; vertical-align: middle; }
+svg.spark .area { fill: currentColor; opacity: 0.15; }
+svg.spark .line { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+svg.spark-mini { display: inline-block; width: 72px; height: 18px; vertical-align: middle; }
+svg.spark-tall { height: 28px; }
+
+/* ─────────────────────────────────────────────────────────────
+   CHART CARD (full-width chart wrapper)
+   ───────────────────────────────────────────────────────────── */
+
+.chart-card {
+  background: rgb(var(--card));
+  border: 1px solid rgb(var(--border-soft));
+  border-radius: 12px;
+  padding: 22px 24px 18px;
+  position: relative;
+}
+.chart-card svg.full-spark { display: block; width: 100%; height: 160px; }
+.chart-card .chart-axis {
+  display: flex; justify-content: space-between;
+  margin-top: 10px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 10.5px;
+  color: rgb(var(--dim));
+  letter-spacing: 0.02em;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   HISTOGRAM (horizontal-bar bucket renderer)
+   ───────────────────────────────────────────────────────────── */
+
+.hist {
+  background: rgb(var(--card));
+  border: 1px solid rgb(var(--border-soft));
+  border-radius: 12px;
+  padding: 18px 22px;
+}
+.hist-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 110px;
+  gap: 18px;
+  padding: 7px 0;
+  align-items: center;
+  font-size: 12.5px;
+}
+.hist-row + .hist-row { border-top: 1px solid rgb(var(--border-soft)); }
+.hist-row .bucket {
+  color: rgb(var(--muted));
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.hist-row .bar-track {
+  height: 18px;
+  background: rgb(var(--bg-3));
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.hist-row .bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, rgb(var(--violet-deep)), rgb(var(--violet)));
+  border-radius: 4px;
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hist-row .bar-fill.danger {
+  background: linear-gradient(90deg, rgb(var(--red)), #fda4af);
+}
+.hist-row .count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  font-family: 'Geist Mono', monospace;
+  font-size: 12.5px;
+  color: rgb(var(--text));
+}
+.hist-row .count .pct {
+  color: rgb(var(--muted));
+  font-size: 11px;
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   FILTER BAR (search + chips above tables)
+   ───────────────────────────────────────────────────────────── */
+
+.filter-bar {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.search-input {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px;
+  background: rgb(var(--card));
+  border: 1px solid rgb(var(--border-soft));
+  border-radius: 8px;
+  font-size: 13px;
+  flex: 1;
+  max-width: 360px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.search-input:focus-within { border-color: rgb(var(--violet)); background: rgb(var(--card-hover)); }
+.search-input svg { width: 14px; height: 14px; color: rgb(var(--muted)); }
+.search-input input {
+  flex: 1; background: none; border: none; outline: none; color: rgb(var(--text));
+  font-family: inherit; font-size: 13px;
+  min-width: 0;
+}
+.search-input input::placeholder { color: rgb(var(--dim)); }
+.filter-bar .filter-count {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11.5px;
+  color: rgb(var(--muted));
+  padding: 3px 10px;
+  background: rgb(var(--bg-3));
+  border-radius: 999px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   RANGE CHIP GROUP
+   ───────────────────────────────────────────────────────────── */
+
+.range-group {
+  display: inline-flex;
+  background: rgb(var(--bg-3));
+  border: 1px solid rgb(var(--border-soft));
+  border-radius: 8px;
+  padding: 2px;
+}
+.range-group .chip {
+  padding: 4px 11px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgb(var(--muted));
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.12s;
+  background: transparent; border: none;
+  font-family: inherit;
+}
+.range-group .chip:hover { color: rgb(var(--text)); }
+.range-group .chip.active {
+  background: rgb(var(--card));
+  color: rgb(var(--violet));
+  box-shadow: 0 1px 0 rgb(var(--border-soft)), 0 0 0 1px rgb(var(--border));
+}
+
+/* ─────────────────────────────────────────────────────────────
+   BULK SELECTION (checkbox + sticky action bar)
+   ───────────────────────────────────────────────────────────── */
+
+.checkbox {
+  width: 15px; height: 15px;
+  border: 1.5px solid rgb(var(--border-strong));
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-block;
+  position: relative;
+  transition: border-color 0.12s, background 0.12s;
+  vertical-align: middle;
+  background: transparent;
+  padding: 0;
+}
+.checkbox:hover { border-color: rgb(var(--violet)); }
+.checkbox.checked {
+  background: rgb(var(--violet));
+  border-color: rgb(var(--violet));
+}
+.checkbox.checked::after {
+  content: '';
+  position: absolute; top: 1.5px; left: 4.5px;
+  width: 4px; height: 8px;
+  border: 2px solid #fff;
+  border-top: 0; border-left: 0;
+  transform: rotate(45deg);
+}
+
+.bulk-bar {
+  position: sticky; bottom: 20px;
+  margin: 12px auto 0;
+  max-width: 540px;
+  display: none;
+  align-items: center; gap: 14px;
+  padding: 10px 14px 10px 18px;
+  background: rgb(var(--card));
+  border: 1px solid rgb(var(--border));
+  border-radius: 999px;
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 40;
+}
+.bulk-bar.visible { display: flex; }
+.bulk-bar .count { color: rgb(var(--violet)); }
+.bulk-bar .sep { color: rgb(var(--border-strong)); }
+.bulk-bar .actions { display: flex; gap: 6px; margin-left: auto; }
+
+/* ─────────────────────────────────────────────────────────────
+   BACK LINK + KICKER (detail-page chrome)
+   ───────────────────────────────────────────────────────────── */
+
+.back-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px;
+  color: rgb(var(--muted));
+  cursor: pointer;
+  margin-bottom: 16px;
+  transition: color 0.12s;
+  background: none; border: none; padding: 0;
+  text-decoration: none;
+  font-family: inherit;
+}
+.back-link:hover { color: rgb(var(--violet)); }
+.back-link svg { width: 14px; height: 14px; transform: rotate(180deg); }
+
+.kicker {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgb(var(--violet));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.kicker svg { width: 13px; height: 13px; }
+
+/* ─────────────────────────────────────────────────────────────
+   TABLE — sortable + clickable enhancements layered over the
+   `.table` surface produced by DataTable.vue.
+   ───────────────────────────────────────────────────────────── */
+
+.table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.12s;
+  white-space: nowrap;
+}
+.table th.sortable:hover { color: rgb(var(--text-2)); }
+.table th.sortable::after {
+  content: '↕';
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  color: rgb(var(--faint));
+  vertical-align: 0;
+  font-weight: 400;
+}
+.table th.sortable.asc::after  { content: '↑'; color: rgb(var(--violet)); }
+.table th.sortable.desc::after { content: '↓'; color: rgb(var(--violet)); }
+.table th.sortable.asc,
+.table th.sortable.desc { color: rgb(var(--text)); }
+
+.table tbody tr.clickable { cursor: pointer; transition: background 0.12s; }
+.table tbody tr.clickable td:first-child {
+  border-left: 2px solid transparent;
+  padding-left: 16px;
+  transition: border-color 0.12s;
+}
+.table tbody tr.clickable:hover td:first-child { border-left-color: rgb(var(--violet)); }
+.table tbody tr.clickable:hover .q-name { color: rgb(var(--violet)); }
+.table tbody tr.clickable td:last-child {
+  position: relative;
+  padding-right: 32px;
+}
+.table tbody tr.clickable td:last-child::after {
+  content: '›';
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgb(var(--faint));
+  font-size: 16px;
+  font-weight: 400;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, transform 0.12s;
+}
+.table tbody tr.clickable:hover td:last-child::after {
+  opacity: 1;
+  color: rgb(var(--violet));
+  transform: translateY(-50%) translateX(2px);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   TOOLTIPS — pure-CSS pseudo-element. Triggered by the
+   `v-tooltip` directive setting `data-tooltip` on the host.
+   ───────────────────────────────────────────────────────────── */
+
+[data-tooltip] { position: relative; }
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: rgb(var(--bg-2));
+  border: 1px solid rgb(var(--border));
+  color: rgb(var(--text));
+  font-family: 'Geist', sans-serif;
+  font-size: 11.5px;
+  font-weight: 400;
+  padding: 5px 9px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s, transform 0.15s;
+  z-index: 60;
+  box-shadow: var(--shadow-md);
+  letter-spacing: -0.01em;
+}
+[data-tooltip]:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }

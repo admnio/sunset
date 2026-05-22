@@ -32,6 +32,12 @@ module.exports = {
         warn:  'rgb(var(--amber) / <alpha-value>)',
         err:   'rgb(var(--red) / <alpha-value>)',
         info:  'rgb(var(--blue) / <alpha-value>)',
+        // Convenience aliases so utilities like `text-green`, `text-red`, etc.
+        // resolve directly to the same channel tokens.
+        green: 'rgb(var(--green) / <alpha-value>)',
+        red:   'rgb(var(--red) / <alpha-value>)',
+        amber: 'rgb(var(--amber) / <alpha-value>)',
+        blue:  'rgb(var(--blue) / <alpha-value>)',
         // Back-compat sunset aliases — point them at v2 tokens so existing pages
         // continue to render until they're migrated in Phase 5–6.
         sunset: {
