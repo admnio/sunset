@@ -2,71 +2,99 @@
 import { computed } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import { usePolling } from '../composables/usePolling.js';
+import DataTable from '../components/DataTable.vue';
+import StatusPill from '../components/StatusPill.vue';
 import Empty from '../components/Empty.vue';
 
 const page = usePage();
 const initial = page.props;
 const { data } = usePolling(page.url);
 const current = computed(() => data.value ?? initial);
+
 const limits = computed(() => current.value.limits ?? []);
 const rejects = computed(() => current.value.rejects ?? []);
+
+const rejectsByLimit = computed(() => {
+  const map = {};
+  for (const r of rejects.value) {
+    map[r.limit] = (map[r.limit] ?? 0) + Number(r.count ?? 0);
+  }
+  return map;
+});
+const totalRejects = computed(() =>
+  Object.values(rejectsByLimit.value).reduce((s, n) => s + n, 0),
+);
+
+function strategyKind(s) {
+  const v = String(s ?? '').toLowerCase();
+  if (v === 'drop') return 'err';
+  if (v === 'release-fixed') return 'info';
+  return 'warn';
+}
+function fmtThrottle(t) {
+  if (!t) return '—';
+  return `${t.max} / ${t.window}s`;
+}
+function fmtConcurrency(c) {
+  if (!c) return '—';
+  return `${c.max}`;
+}
+const rowsWithRejects = computed(() =>
+  limits.value.map((l) => ({
+    ...l,
+    rejects: rejectsByLimit.value[l.name] ?? 0,
+  })),
+);
 </script>
 
 <template>
-  <div class="space-y-3">
-    <h1 class="text-base font-bold">Rate limits</h1>
-    <p class="text-xs text-sunset-muted">
-      Read-only. Declared via <code>Sunset::for()</code> / <code>Sunset::limit()</code> in service providers.
-    </p>
-
-    <Empty v-if="limits.length === 0" message="No rate limits declared." />
-    <div v-else class="border border-sunset-border rounded overflow-hidden">
-      <div
-        class="grid bg-sunset-rail text-sunset-muted text-[9px] uppercase tracking-wide px-3 py-1 gap-3"
-        style="grid-template-columns: 1fr 1fr 1fr 1fr 100px"
-      >
-        <div>Name</div>
-        <div>Target</div>
-        <div>Throttle</div>
-        <div>Concurrency</div>
-        <div>Over-limit</div>
-      </div>
-      <div
-        v-for="limit in limits"
-        :key="limit.name"
-        class="grid px-3 py-2 border-t border-sunset-border text-xs gap-3"
-        style="grid-template-columns: 1fr 1fr 1fr 1fr 100px"
-      >
-        <div class="font-bold truncate">{{ limit.name }}</div>
-        <div class="text-sunset-muted truncate">{{ limit.target }}</div>
-        <div class="tabular-nums">
-          <span v-if="limit.throttle">{{ limit.throttle.max }} / {{ limit.throttle.window }}s</span>
-          <span v-else class="text-sunset-muted">—</span>
-        </div>
-        <div class="tabular-nums">
-          <span v-if="limit.concurrency">{{ limit.concurrency.max }} slots</span>
-          <span v-else class="text-sunset-muted">—</span>
-        </div>
-        <div class="text-sunset-muted truncate">{{ limit.over_limit || '—' }}</div>
+  <div>
+    <div class="page-head">
+      <h1 class="page-title">Rate limits</h1>
+      <span class="page-sub">{{ limits.length }} registered · {{ totalRejects }} rejects in past hour</span>
+      <div class="page-actions">
+        <button class="btn primary"><svg><use href="#i-plus"/></svg>Add limit</button>
       </div>
     </div>
 
-    <section v-if="rejects.length" class="space-y-2">
-      <h2 class="text-xs uppercase text-sunset-muted">Recent rejections</h2>
-      <div class="border border-sunset-border rounded divide-y divide-sunset-border">
-        <div
-          v-for="row in rejects"
-          :key="`${row.connection}:${row.queue}:${row.limit}`"
-          class="px-3 py-2 grid gap-3 text-xs"
-          style="grid-template-columns: 1fr 1fr 1fr 120px 80px"
-        >
-          <div class="text-sunset-text font-bold truncate">{{ row.limit }}</div>
-          <div class="text-sunset-muted truncate">{{ row.connection }}/{{ row.queue }}</div>
-          <div></div>
-          <div class="text-sunset-text text-right tabular-nums">{{ row.count }}</div>
-          <div class="text-sunset-muted text-right">~{{ row.ttl_seconds }}s</div>
-        </div>
-      </div>
-    </section>
+    <Empty v-if="limits.length === 0" message="No rate limits declared." />
+    <DataTable
+      v-else
+      :columns="[
+        { key: 'name', label: 'Name', width: '1fr', sortable: 'text' },
+        { key: 'target', label: 'Target', width: '1.2fr' },
+        { key: 'throttle', label: 'Throttle', width: '130px', align: 'right' },
+        { key: 'concurrency', label: 'Concurrency', width: '130px', align: 'right' },
+        { key: 'over_limit', label: 'Strategy', width: '180px' },
+        { key: 'rejects', label: 'Rejects (1h)', width: '120px', align: 'right', sortable: 'num' },
+      ]"
+      :rows="rowsWithRejects"
+      :selectable="false"
+    >
+      <template #name="{ row }">
+        <span class="q-name">{{ row.name }}</span>
+      </template>
+      <template #target="{ row }">
+        <span class="pill neutral">{{ row.target }}</span>
+      </template>
+      <template #throttle="{ row }">
+        <span>{{ fmtThrottle(row.throttle) }}</span>
+      </template>
+      <template #concurrency="{ row }">
+        <span>{{ fmtConcurrency(row.concurrency) }}</span>
+      </template>
+      <template #over_limit="{ row }">
+        <StatusPill :status="strategyKind(row.over_limit)">{{ row.over_limit || '—' }}</StatusPill>
+      </template>
+      <template #rejects="{ row }">
+        <span :style="row.rejects > 0 ? 'color: rgb(var(--amber))' : ''">{{ row.rejects }}</span>
+      </template>
+    </DataTable>
+
+    <div class="callout">
+      Declare limits fluently in any service provider —
+      <code>Sunset::for('geocode')-&gt;throttle(perMinute: 10)-&gt;concurrency(3);</code>
+      Zero overhead when no limits are registered.
+    </div>
   </div>
 </template>

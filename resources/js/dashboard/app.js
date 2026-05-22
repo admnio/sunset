@@ -24,6 +24,21 @@ createInertiaApp({
       .use(plugin)
       .use(pinia);
 
+    // v-tooltip — sets/removes `data-tooltip` on the host element. The CSS
+    // pseudo-element styling lives in app.css (`[data-tooltip]::after`).
+    app.directive('tooltip', {
+      mounted(el, binding) {
+        if (binding.value) el.setAttribute('data-tooltip', binding.value);
+      },
+      updated(el, binding) {
+        if (binding.value) el.setAttribute('data-tooltip', binding.value);
+        else el.removeAttribute('data-tooltip');
+      },
+      unmounted(el) {
+        el.removeAttribute('data-tooltip');
+      },
+    });
+
     // Theme bootstrap BEFORE mount so first paint matches preference.
     useTheme().bootstrap();
 

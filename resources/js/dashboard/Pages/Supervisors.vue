@@ -3,10 +3,12 @@ import { computed, ref } from 'vue';
 import { usePage, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import { usePolling } from '../composables/usePolling.js';
+import DataTable from '../components/DataTable.vue';
 import StatusPill from '../components/StatusPill.vue';
 import ConfirmAction from '../components/ConfirmAction.vue';
 import Empty from '../components/Empty.vue';
 import Sparkline from '../components/Sparkline.vue';
+import { useToasts } from '../composables/useToasts.js';
 
 const page = usePage();
 const initial = page.props;
@@ -18,196 +20,217 @@ const masters = computed(() => current.value.masters ?? []);
 const workerMetrics = computed(() => current.value.worker_metrics ?? {});
 const workerMetricSeries = computed(() => current.value.worker_metric_series ?? {});
 
-// Per-row sparkline metric toggle: defaults to 'rss', clicking flips to 'cpu'.
-// Keyed by PID so each row remembers its own choice across polling refreshes.
+const { push } = useToasts();
 const sparkKindByPid = ref({});
 
-function sparkKind(pid) {
-  return sparkKindByPid.value[pid] ?? 'rss';
-}
-
+function sparkKind(pid) { return sparkKindByPid.value[pid] ?? 'rss'; }
 function toggleSpark(pid) {
   sparkKindByPid.value = {
     ...sparkKindByPid.value,
     [pid]: sparkKind(pid) === 'rss' ? 'cpu' : 'rss',
   };
 }
-
-// Sparkline component expects a normalized 0..1 array. Series points arrive
-// as [{ts, value}]; we project to values then divide by the per-series max.
 function normalizedPoints(pid) {
   const series = workerMetricSeries.value?.[pid];
-  if (! series) return [];
-
+  if (!series) return [];
   const points = series[sparkKind(pid)] || [];
   if (points.length === 0) return [];
-
   const values = points.map((p) => Number(p.value) || 0);
   const max = Math.max(...values);
   if (max <= 0) return values.map(() => 0);
   return values.map((v) => v / max);
 }
 
-// Workers list: one row per metrics entry, sorted by supervisor then PID for
-// stable rendering across polls.
-const workers = computed(() => {
-  return Object.values(workerMetrics.value)
-    .filter((m) => m && m.pid != null)
-    .slice()
-    .sort((a, b) => {
-      const supA = String(a.supervisor ?? '');
-      const supB = String(b.supervisor ?? '');
-      if (supA !== supB) return supA.localeCompare(supB);
-      return Number(a.pid) - Number(b.pid);
-    });
-});
+const workers = computed(() => Object.values(workerMetrics.value)
+  .filter((m) => m && m.pid != null)
+  .slice()
+  .sort((a, b) => {
+    const supA = String(a.supervisor ?? '');
+    const supB = String(b.supervisor ?? '');
+    if (supA !== supB) return supA.localeCompare(supB);
+    return Number(a.pid) - Number(b.pid);
+  }));
 
-// Format helpers. Inline (no composable) — only used by this page.
 function formatBytes(n) {
   if (n == null || Number.isNaN(Number(n))) return '—';
   const mb = Number(n) / (1024 * 1024);
   return `${mb.toFixed(1)} MB`;
 }
-
 function formatCpu(n) {
   if (n == null || n === '' || Number.isNaN(Number(n))) return '—';
   return `${Number(n).toFixed(1)}%`;
 }
 
-async function pause(name) {
+const supervisorRows = computed(() => supervisors.value.map((s) => ({
+  ...s,
+  connection: s.options?.connection ?? s.connection ?? '—',
+  queues_label: Array.isArray(s.queues) ? s.queues.join(', ')
+               : typeof s.queues === 'string' ? s.queues
+               : (s.options?.queue ?? ''),
+  procs_label: `${s.processes ?? 0} / ${s.options?.maxProcesses ?? '—'}`,
+})));
+
+const workerRows = computed(() => workers.value.map((w) => ({
+  ...w,
+  pid: w.pid,
+  rss_bytes: w.rss_bytes,
+  cpu_pct: w.cpu_pct,
+  uptime: w.started_at ? Math.max(0, Math.floor(Date.now() / 1000 - w.started_at)) : 0,
+})));
+function fmtUptime(secs) {
+  if (!secs) return '—';
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
+  return `${Math.floor(secs / 86400)}d ${Math.floor((secs % 86400) / 3600)}h`;
+}
+
+const leakingWorker = computed(() =>
+  workers.value.find((w) => Number(w.rss_bytes ?? 0) > 100 * 1024 * 1024),
+);
+
+async function pauseSupervisor(name) {
   try {
     await axios.post(`/sunset/supervisors/${encodeURIComponent(name)}/pause`);
+    push({ kind: 'ok', title: 'Supervisor paused.', undo: true });
     router.reload({ only: ['supervisors', 'masters'] });
   } catch (e) {
-    console.error('Pause failed:', e);
+    push({ kind: 'err', title: 'Pause failed.', sub: e?.message });
   }
 }
-
-async function resume(name) {
+async function resumeSupervisor(name) {
   try {
     await axios.post(`/sunset/supervisors/${encodeURIComponent(name)}/resume`);
+    push({ kind: 'ok', title: 'Supervisor resumed.' });
     router.reload({ only: ['supervisors', 'masters'] });
   } catch (e) {
-    console.error('Resume failed:', e);
+    push({ kind: 'err', title: 'Resume failed.', sub: e?.message });
   }
 }
-
 function statusKind(s) {
   const v = String(s ?? '').toLowerCase();
   if (v === 'paused') return 'warn';
   if (v === 'running' || v === 'continuing') return 'ok';
-  if (v === 'terminating' || v === 'terminated') return 'failed';
+  if (v === 'terminating' || v === 'terminated') return 'err';
   return 'info';
-}
-
-function queueLabel(s) {
-  if (Array.isArray(s.queues)) return s.queues.join(', ');
-  if (typeof s.queues === 'string') return s.queues;
-  if (typeof s.queue === 'string') return s.queue;
-  return '';
 }
 </script>
 
 <template>
-  <div class="space-y-4">
-    <h1 class="text-base font-bold">Supervisors</h1>
-
-    <section v-if="masters.length > 0">
-      <h2 class="text-xs uppercase text-sunset-muted mb-2">Masters ({{ masters.length }})</h2>
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <div
-          v-for="m in masters"
-          :key="m.name"
-          class="border border-sunset-border rounded p-3 bg-sunset-card text-xs"
-        >
-          <div class="flex items-center justify-between mb-1">
-            <span class="font-bold">{{ m.name }}</span>
-            <StatusPill :status="statusKind(m.status)">{{ m.status }}</StatusPill>
-          </div>
-          <div class="text-sunset-muted">PID {{ m.pid ?? '—' }}</div>
-        </div>
+  <div>
+    <div class="page-head">
+      <h1 class="page-title">Supervisors</h1>
+      <span class="page-sub">
+        {{ masters.length }} master{{ masters.length === 1 ? '' : 's' }} ·
+        {{ supervisors.length }} supervisor{{ supervisors.length === 1 ? '' : 's' }} ·
+        {{ workers.length }} worker{{ workers.length === 1 ? '' : 's' }}
+      </span>
+      <div class="page-actions">
+        <button class="btn"><svg><use href="#i-refresh"/></svg></button>
       </div>
-    </section>
+    </div>
 
-    <section>
-      <h2 class="text-xs uppercase text-sunset-muted mb-2">
-        Supervisors ({{ supervisors.length }})
-      </h2>
+    <div class="section">
+      <div class="section-head">
+        <h2>Process tree</h2>
+        <span class="meta">{{ supervisors.length }} supervisor{{ supervisors.length === 1 ? '' : 's' }}</span>
+      </div>
       <Empty v-if="supervisors.length === 0" message="No supervisors running." />
-      <div v-else class="grid gap-3 md:grid-cols-2">
-        <div
-          v-for="s in supervisors"
-          :key="s.name"
-          class="border border-sunset-border rounded p-3 bg-sunset-card"
-        >
-          <div class="flex items-center justify-between mb-2">
-            <span class="font-bold text-sm">{{ s.name }}</span>
-            <StatusPill :status="statusKind(s.status)">{{ s.status }}</StatusPill>
-          </div>
-          <div class="text-xs text-sunset-muted mb-3 space-y-1">
-            <div>{{ s.processes ?? 0 }} processes</div>
-            <div v-if="queueLabel(s)" class="truncate">{{ queueLabel(s) }}</div>
-          </div>
-          <div class="flex gap-2">
+      <DataTable
+        v-else
+        :columns="[
+          { key: 'name', label: 'Supervisor', width: '1.4fr' },
+          { key: 'status', label: 'Status', width: '130px' },
+          { key: 'procs_label', label: 'Workers', width: '120px', align: 'right' },
+          { key: 'connection', label: 'Connection', width: '130px' },
+          { key: 'queues_label', label: 'Queues', width: '1fr' },
+          { key: 'actions', label: '', width: '150px' },
+        ]"
+        :rows="supervisorRows"
+        :selectable="false"
+      >
+        <template #name="{ row }">
+          <span class="q-name">{{ row.name }}</span>
+        </template>
+        <template #status="{ row }">
+          <StatusPill :status="statusKind(row.status)">{{ row.status }}</StatusPill>
+        </template>
+        <template #connection="{ row }">
+          <span class="pill neutral">{{ row.connection }}</span>
+        </template>
+        <template #actions="{ row }">
+          <div class="flex justify-end" @click.stop>
             <ConfirmAction
-              v-if="String(s.status).toLowerCase() !== 'paused'"
+              v-if="String(row.status).toLowerCase() !== 'paused'"
               label="pause"
               confirm-label="confirm pause"
-              @confirm="pause(s.name)"
+              @confirm="pauseSupervisor(row.name)"
             />
             <ConfirmAction
               v-else
               label="resume"
               confirm-label="confirm resume"
-              @confirm="resume(s.name)"
+              @confirm="resumeSupervisor(row.name)"
             />
           </div>
-        </div>
-      </div>
-    </section>
+        </template>
+      </DataTable>
+    </div>
 
-    <section>
-      <h2 class="text-xs uppercase text-sunset-muted mb-2">
-        Workers ({{ workers.length }})
-      </h2>
-      <Empty v-if="workers.length === 0" message="No worker telemetry reported yet." />
-      <div
-        v-else
-        class="border border-sunset-border rounded divide-y divide-sunset-border bg-sunset-card"
-      >
-        <div
-          class="px-3 py-2 grid grid-cols-[1fr_90px_70px_70px_140px] items-center gap-3 text-[10px] uppercase text-sunset-muted"
-        >
-          <div>Worker</div>
-          <div class="text-right">PID</div>
-          <div class="text-right">RSS</div>
-          <div class="text-right">CPU%</div>
-          <div class="text-right">Trend</div>
-        </div>
-        <div
-          v-for="w in workers"
-          :key="w.pid"
-          class="px-3 py-2 grid grid-cols-[1fr_90px_70px_70px_140px] items-center gap-3 text-xs cursor-pointer hover:bg-sunset-border/30"
-          :title="`click to toggle sparkline metric (currently ${sparkKind(w.pid).toUpperCase()})`"
-          @click="toggleSpark(w.pid)"
-        >
-          <div class="truncate">
-            <div class="font-bold">{{ w.supervisor ?? '—' }}</div>
-            <div v-if="Array.isArray(w.queues) && w.queues.length" class="text-sunset-muted truncate">
-              {{ w.queues.join(', ') }}
-            </div>
-          </div>
-          <div class="text-right tabular-nums text-sunset-muted">{{ w.pid ?? '—' }}</div>
-          <div class="text-right tabular-nums">{{ formatBytes(w.rss_bytes) }}</div>
-          <div class="text-right tabular-nums">{{ formatCpu(w.cpu_pct) }}</div>
-          <div class="text-sunset-accent text-right">
-            <Sparkline :points="normalizedPoints(w.pid)" />
-            <div class="text-[10px] text-sunset-muted uppercase mt-0.5">
-              {{ sparkKind(w.pid) }}
-            </div>
-          </div>
-        </div>
+    <div class="section">
+      <div class="section-head">
+        <h2>Workers</h2>
+        <span class="meta">live telemetry · click row to toggle RSS ↔ CPU</span>
       </div>
-    </section>
+      <Empty v-if="workerRows.length === 0" message="No worker telemetry reported yet." />
+      <DataTable
+        v-else
+        :columns="[
+          { key: 'supervisor', label: 'Worker', width: '1.5fr' },
+          { key: 'pid', label: 'PID', width: '90px', align: 'right' },
+          { key: 'rss_bytes', label: 'RSS', width: '110px', align: 'right', sortable: 'num' },
+          { key: 'cpu_pct', label: 'CPU %', width: '100px', align: 'right', sortable: 'num' },
+          { key: 'uptime', label: 'Uptime', width: '110px', align: 'right' },
+          { key: 'trend', label: 'Trend', width: '160px' },
+        ]"
+        :rows="workerRows"
+        :clickable="true"
+        :selectable="false"
+        @row-click="(r) => toggleSpark(r.pid)"
+      >
+        <template #supervisor="{ row }">
+          <div>
+            <span class="q-name">{{ row.supervisor ?? '—' }}</span>
+            <StatusPill v-if="Number(row.rss_bytes ?? 0) > 100 * 1024 * 1024" status="warn" style="margin-left: 8px;">High mem</StatusPill>
+            <div v-if="Array.isArray(row.queues) && row.queues.length" style="font-size: 11px; color: rgb(var(--muted)); margin-top: 2px; font-family: 'Geist Mono', monospace;">
+              {{ row.queues.join(', ') }}
+            </div>
+          </div>
+        </template>
+        <template #rss_bytes="{ row }">
+          <span :style="Number(row.rss_bytes ?? 0) > 100 * 1024 * 1024 ? 'color: rgb(var(--red))' : ''">
+            {{ formatBytes(row.rss_bytes) }}
+          </span>
+        </template>
+        <template #cpu_pct="{ row }">
+          <span>{{ formatCpu(row.cpu_pct) }}</span>
+        </template>
+        <template #uptime="{ row }">{{ fmtUptime(row.uptime) }}</template>
+        <template #trend="{ row }">
+          <Sparkline :points="normalizedPoints(row.pid)" :color="sparkKind(row.pid) === 'cpu' ? 'amber' : 'violet'" :width="100" :height="18" />
+          <div style="font-size: 9.5px; color: rgb(var(--dim)); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px;">
+            {{ sparkKind(row.pid) }}
+          </div>
+        </template>
+      </DataTable>
+    </div>
+
+    <div v-if="leakingWorker" class="banner-warn" style="border-radius: 10px; padding: 14px 16px; margin-top: 20px; display: flex; align-items: flex-start; gap: 12px;">
+      <svg style="width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; color: rgb(var(--amber));"><use href="#i-alert"/></svg>
+      <div style="font-size: 13px; color: rgb(var(--text-2));">
+        Worker <code style="font-family: 'Geist Mono', monospace; padding: 1px 6px; background: rgb(var(--bg-3)); border-radius: 4px; color: rgb(var(--violet));">{{ leakingWorker.pid }}</code> RSS climbing —
+        currently {{ formatBytes(leakingWorker.rss_bytes) }}. Will auto-restart at the memory limit.
+      </div>
+    </div>
   </div>
 </template>
