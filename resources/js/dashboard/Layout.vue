@@ -4,6 +4,8 @@ import LeftRail from './components/LeftRail.vue';
 import HeaderBar from './components/Header.vue';
 import HealthStrip from './components/HealthStrip.vue';
 import CommandPalette from './components/CommandPalette.vue';
+import KeyboardShortcutsModal from './components/KeyboardShortcutsModal.vue';
+import ToastContainer from './components/ToastContainer.vue';
 import { useKeyboard } from './composables/useKeyboard.js';
 
 useKeyboard();
@@ -35,6 +37,7 @@ useKeyboard();
     </div>
 
     <CommandPalette />
-    <!-- TODO(v2-phase-4): mount <ToastContainer /> and <KeyboardShortcutsModal /> here. -->
+    <KeyboardShortcutsModal />
+    <ToastContainer />
   </div>
 </template>

@@ -3,8 +3,10 @@ import { computed } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { useTheme } from '../composables/useTheme.js';
 import { usePaletteStore } from '../stores/paletteStore.js';
+import { useShortcutsStore } from '../stores/shortcutsStore.js';
 
 const palette = usePaletteStore();
+const shortcuts = useShortcutsStore();
 const theme = useTheme();
 const page = usePage();
 
@@ -35,11 +37,7 @@ const themeIcon = computed(() => {
 });
 
 function openShortcuts() {
-  // Wired in Phase 4 (KeyboardShortcutsModal). For now expose a global hook
-  // so other Phase-4 wiring can call it without touching Header again.
-  if (typeof window !== 'undefined' && typeof window.openShortcuts === 'function') {
-    window.openShortcuts();
-  }
+  shortcuts.open();
 }
 </script>
 
