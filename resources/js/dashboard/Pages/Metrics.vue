@@ -88,7 +88,7 @@ const jobRows = computed(() =>
 );
 
 function onJobRowClick(row) {
-  router.visit(`/sunset/metrics/jobs/${encodeURIComponent(row.name)}`);
+  router.visit(`/sunset/metrics/jobs/${encodeURIComponent(row.name)}/detail`);
 }
 </script>
 

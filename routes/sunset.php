@@ -20,7 +20,16 @@ Route::middleware([Authorize::class, \Inertia\Middleware::class, SetSunsetInerti
         Route::get('/metrics/series',         [C\MetricsController::class,       'series'])->name('metrics.series');
         Route::get('/metrics/jobs/{name}',    [C\MetricsController::class,       'jobSeries'])->name('metrics.jobs');
         Route::get('/metrics/queues/{name}',  [C\MetricsController::class,       'queueSeries'])->name('metrics.queues');
+        // v2.0: Inertia detail page for a single job class. Distinct from the
+        // existing jobSeries JSON endpoint above.
+        Route::get('/metrics/jobs/{name}/detail', [C\MetricsController::class,   'class'])
+            ->where('name', '[^/]+')
+            ->name('metrics.jobs.detail');
         Route::get('/monitoring',             [C\MonitoringController::class,    'show'])->name('monitoring');
+        // v2.0: Inertia detail page for a single monitored tag.
+        Route::get('/monitoring/tags/{tag}',  [C\MonitoringController::class,    'tag'])
+            ->where('tag', '[^/]+')
+            ->name('monitoring.tags.detail');
         Route::get('/rate-limits',            [C\RateLimitsController::class,    'show'])->name('rate-limits');
         Route::get('/supervisors',            [C\SupervisorsController::class,   'show'])->name('supervisors');
         Route::get('/batches',                [C\BatchesController::class,       'show'])->name('batches');
