@@ -4,31 +4,22 @@ import { usePage } from '@inertiajs/vue3';
 
 const page = usePage();
 
-// TODO(v2-shared-props): wire to Inertia shared props after middleware extension.
-// Until then, fall back to the placeholder mockup data so the strip renders
-// realistically in dev.
-const FALLBACK = {
-  probes: [
-    { name: 'redis',     status: 'ok',   latency: '2ms' },
-    { name: 'sqs',       status: 'ok',   latency: '38ms' },
-    { name: 'rabbitmq',  status: 'ok',   latency: '11ms' },
-    { name: 'scheduler', status: 'ok',   latency: 'last 04:22' },
-  ],
-  workerWarning: { name: 'worker 91824', detail: '112MB / 128MB' },
-  workers: 28,
-  pending: '3,847',
-  throughput: '1.2k',
-  failed: 5,
-};
+// `sunset.health` is shared by SetSunsetInertiaRoot on every dashboard
+// request. The middleware degrades to an empty payload on Redis errors, so
+// the optional chaining below is a defence-in-depth fallback only.
+const health = computed(() => page.props?.sunset?.health ?? {});
 
-const health = computed(() => page.props?.sunset?.health ?? FALLBACK);
+const probes = computed(() => health.value?.probes ?? []);
+const workerWarning = computed(() => health.value?.workerWarning ?? null);
+const workers = computed(() => health.value?.workers ?? 0);
+const pending = computed(() => health.value?.pending ?? 0);
+const throughput = computed(() => health.value?.throughput ?? '0');
+const failed = computed(() => health.value?.failed ?? 0);
 
-const probes = computed(() => health.value?.probes ?? FALLBACK.probes);
-const workerWarning = computed(() => health.value?.workerWarning ?? FALLBACK.workerWarning);
-const workers = computed(() => health.value?.workers ?? FALLBACK.workers);
-const pending = computed(() => health.value?.pending ?? FALLBACK.pending);
-const throughput = computed(() => health.value?.throughput ?? FALLBACK.throughput);
-const failed = computed(() => health.value?.failed ?? FALLBACK.failed);
+const pendingDisplay = computed(() => {
+  const v = pending.value;
+  return typeof v === 'number' ? v.toLocaleString() : v;
+});
 
 function pillClass(status) {
   if (status === 'warn') return 'is-warn';
@@ -42,21 +33,23 @@ function pillClass(status) {
     class="sunset-health-strip sticky z-[49] flex items-center gap-3 border-b border-border-soft overflow-x-auto whitespace-nowrap"
     style="top: 56px; padding: 7px 20px; background: var(--topbar-bg); backdrop-filter: blur(12px) saturate(1.4); -webkit-backdrop-filter: blur(12px) saturate(1.4); font-size: 12px;"
   >
-    <span
-      class="font-mono uppercase"
-      style="font-size: 10.5px; color: var(--dim); letter-spacing: 0.04em;"
-    >Probes</span>
+    <template v-if="probes.length > 0">
+      <span
+        class="font-mono uppercase"
+        style="font-size: 10.5px; color: var(--dim); letter-spacing: 0.04em;"
+      >Probes</span>
 
-    <span
-      v-for="probe in probes"
-      :key="probe.name"
-      class="sunset-health-pill"
-      :class="pillClass(probe.status)"
-    >
-      <span class="sunset-health-dot"></span>
-      {{ probe.name }}
-      <span v-if="probe.latency" class="sunset-health-latency font-mono">{{ probe.latency }}</span>
-    </span>
+      <span
+        v-for="probe in probes"
+        :key="probe.name"
+        class="sunset-health-pill"
+        :class="pillClass(probe.status)"
+      >
+        <span class="sunset-health-dot"></span>
+        {{ probe.name }}
+        <span v-if="probe.latency" class="sunset-health-latency font-mono">{{ probe.latency }}</span>
+      </span>
+    </template>
 
     <span v-if="workerWarning" class="sunset-health-pill is-warn">
       <span class="sunset-health-dot"></span>
@@ -69,7 +62,7 @@ function pillClass(status) {
       style="color: var(--muted); font-size: 11px;"
     >
       <strong class="sunset-health-strong">{{ workers }}</strong> workers ·
-      <strong class="sunset-health-strong">{{ pending }}</strong> pending ·
+      <strong class="sunset-health-strong">{{ pendingDisplay }}</strong> pending ·
       <strong class="sunset-health-strong">{{ throughput }}</strong>/min ·
       <strong class="sunset-health-strong" style="color: var(--red);">{{ failed }}</strong> failed (1h)
     </span>
