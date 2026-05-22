@@ -1005,3 +1005,269 @@ html[data-theme="light"] .kbd-modal-backdrop { background: rgba(0, 0, 0, 0.25); 
   letter-spacing: 0.02em;
   vertical-align: 1px;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   TABS (Recent / Pending sub-filters)
+   ───────────────────────────────────────────────────────────── */
+
+.tabs { display: flex; gap: 0; border-bottom: 1px solid rgb(var(--border-soft)); margin-bottom: 20px; }
+.tab {
+  padding: 8px 14px;
+  font-size: 13px; font-weight: 500;
+  color: rgb(var(--muted)); cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.12s, border-color 0.12s;
+  background: none; border-top: 0; border-left: 0; border-right: 0;
+  font-family: inherit;
+}
+.tab:hover { color: rgb(var(--text)); }
+.tab.active { color: rgb(var(--violet)); border-bottom-color: rgb(var(--violet)); }
+.tab .count {
+  margin-left: 6px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  padding: 1px 6px;
+  background: rgb(var(--bg-3));
+  border-radius: 9px;
+  color: rgb(var(--muted));
+}
+.tab.active .count { background: var(--violet-soft); color: rgb(var(--violet)); }
+
+/* ─────────────────────────────────────────────────────────────
+   CARDS — Health version cards, Batches, etc.
+   ───────────────────────────────────────────────────────────── */
+
+.card {
+  background: rgb(var(--card));
+  border: 1px solid rgb(var(--border-soft));
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+.card-label { font-size: 12.5px; color: rgb(var(--muted)); font-weight: 500; margin-bottom: 6px; }
+.card-value { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+.card-foot  { margin-top: 8px; font-size: 12px; color: rgb(var(--muted)); }
+
+/* ─────────────────────────────────────────────────────────────
+   BATCHES
+   ───────────────────────────────────────────────────────────── */
+
+.batch-card {
+  background: rgb(var(--card));
+  border: 1px solid rgb(var(--border-soft));
+  border-radius: 12px;
+  padding: 18px 20px;
+  position: relative;
+  transition: border-color 0.15s;
+}
+.batch-card:hover { border-color: rgb(var(--border)); }
+.batch-card.failing { border-left: 3px solid rgb(var(--red)); }
+.batch-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.batch-name { font-weight: 500; font-size: 14.5px; letter-spacing: -0.01em; }
+.batch-name .sub {
+  display: block; font-size: 11.5px; color: rgb(var(--muted));
+  font-weight: 400; margin-top: 3px; font-family: 'Geist Mono', monospace;
+}
+.batch-counts { display: flex; gap: 14px; margin-bottom: 12px; font-size: 12.5px; }
+.batch-counts .item { display: flex; align-items: baseline; gap: 5px; }
+.batch-counts .item .l { color: rgb(var(--muted)); font-size: 11.5px; }
+.batch-counts .item .v { font-family: 'Geist Mono', monospace; font-weight: 500; }
+.batch-counts .item.fail .v { color: rgb(var(--red)); }
+.batch-counts .item.done .v { color: rgb(var(--green)); }
+.batch-progress {
+  height: 5px;
+  background: rgb(var(--bg-3));
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  position: relative;
+  display: flex;
+}
+.batch-progress .bar {
+  background: rgb(var(--violet));
+  transition: width 0.3s;
+}
+.batch-progress .bar.fail { background: rgb(var(--red)); }
+.batch-progress .bar.ok   { background: rgb(var(--green)); }
+.batch-foot { font-size: 11.5px; color: rgb(var(--muted)); font-family: 'Geist Mono', monospace; }
+
+/* ─────────────────────────────────────────────────────────────
+   HEALTH PROBES
+   ───────────────────────────────────────────────────────────── */
+
+.probe {
+  background: rgb(var(--card));
+  border: 1px solid rgb(var(--border-soft));
+  border-left: 3px solid rgb(var(--green));
+  border-radius: 10px;
+  padding: 16px 18px;
+  display: flex; align-items: center; gap: 14px;
+}
+.probe.warn { border-left-color: rgb(var(--amber)); }
+.probe.err  { border-left-color: rgb(var(--red)); }
+.probe-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: rgb(var(--green));
+  box-shadow: 0 0 0 4px var(--green-soft);
+  flex-shrink: 0;
+}
+.probe.warn .probe-dot { background: rgb(var(--amber)); box-shadow: 0 0 0 4px var(--amber-soft); }
+.probe.err  .probe-dot { background: rgb(var(--red));   box-shadow: 0 0 0 4px var(--red-soft); }
+.probe-body { flex: 1; }
+.probe-name { font-weight: 500; font-size: 15px; letter-spacing: -0.01em; }
+.probe-meta { font-size: 11.5px; color: rgb(var(--muted)); margin-top: 2px; font-family: 'Geist Mono', monospace; }
+.probe-stat { text-align: right; }
+.probe-stat .v {
+  font-size: 18px; font-weight: 600;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+}
+.probe-stat .u {
+  font-size: 11.5px; color: rgb(var(--muted)); font-weight: 500; margin-left: 2px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   SCHEDULE
+   ───────────────────────────────────────────────────────────── */
+
+.schedule {
+  background: rgb(var(--card));
+  border: 1px solid rgb(var(--border-soft));
+  border-radius: 12px;
+}
+.schedule .row {
+  display: grid; grid-template-columns: 1.6fr 1fr 2fr;
+  gap: 16px;
+  padding: 11px 18px;
+  border-bottom: 1px solid rgb(var(--border-soft));
+  align-items: baseline;
+  font-size: 13px;
+}
+.schedule .row:last-child { border-bottom: none; }
+.schedule .cmd {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12.5px;
+  color: rgb(var(--violet));
+}
+.schedule .cad {
+  font-size: 12.5px;
+  color: rgb(var(--text-2));
+  display: flex; align-items: center; gap: 6px;
+}
+.schedule .cad svg { width: 12px; height: 12px; color: rgb(var(--muted)); }
+.schedule .desc { color: rgb(var(--muted)); font-size: 12.5px; }
+
+/* ─────────────────────────────────────────────────────────────
+   MASTER-DETAIL SPLIT (Failed Jobs)
+   ───────────────────────────────────────────────────────────── */
+
+.split {
+  display: grid; grid-template-columns: 340px 1fr;
+  background: rgb(var(--card));
+  border: 1px solid rgb(var(--border-soft));
+  border-radius: 12px;
+  overflow: hidden;
+  min-height: 540px;
+}
+.split-master {
+  border-right: 1px solid rgb(var(--border-soft));
+  display: flex; flex-direction: column;
+}
+.split-master .mh {
+  padding: 12px 16px;
+  font-size: 12px; color: rgb(var(--muted));
+  border-bottom: 1px solid rgb(var(--border-soft));
+  display: flex; align-items: center; gap: 8px;
+}
+.split-master .mh .ml-auto { margin-left: auto; font-size: 11px; }
+.master-list { flex: 1; overflow-y: auto; }
+.master-item {
+  padding: 13px 16px;
+  border-bottom: 1px solid rgb(var(--border-soft));
+  cursor: pointer;
+  transition: background 0.12s;
+  border-left: 2px solid transparent;
+}
+.master-item:hover { background: rgba(167, 139, 250, 0.04); }
+.master-item.active {
+  background: var(--violet-soft);
+  border-left-color: rgb(var(--violet));
+}
+.master-item .mt-who { font-weight: 500; font-size: 13px; color: rgb(var(--text)); margin-bottom: 3px; }
+.master-item .mt-what {
+  color: rgb(var(--red)); font-size: 11.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-family: 'Geist Mono', monospace; margin-bottom: 4px;
+}
+.master-item .mt-meta {
+  font-size: 11px; color: rgb(var(--muted));
+  font-family: 'Geist Mono', monospace; letter-spacing: 0.02em;
+}
+.master-item .top-row { display: flex; align-items: center; }
+.master-item .checkbox { margin-right: 8px; }
+
+.split-detail { padding: 24px 28px; overflow: auto; }
+.detail-head {
+  display: flex; align-items: flex-start; gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgb(var(--border-soft));
+  margin-bottom: 20px;
+}
+.detail-head .title-block { flex: 1; }
+.detail-head h3 { font-size: 20px; font-weight: 600; letter-spacing: -0.015em; margin: 0; }
+.detail-head .actions { display: flex; gap: 6px; }
+.detail-actions { display: flex; gap: 8px; margin-bottom: 20px; }
+
+.detail-meta {
+  display: flex; gap: 18px; flex-wrap: wrap;
+  font-size: 12.5px; color: rgb(var(--muted));
+  margin-bottom: 20px;
+}
+.detail-meta .item { display: flex; align-items: center; gap: 6px; }
+.detail-meta .item .k { color: rgb(var(--dim)); }
+.detail-meta .item .v {
+  color: rgb(var(--text-2));
+  font-family: 'Geist Mono', monospace; font-size: 12px;
+}
+
+.trace {
+  background: rgb(var(--bg-2));
+  border: 1px solid rgb(var(--border-soft));
+  border-radius: 8px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  padding: 16px 18px;
+  line-height: 1.65;
+  color: rgb(var(--text-2));
+  max-height: 380px;
+  overflow: auto;
+}
+.trace .first {
+  color: rgb(var(--red)); font-weight: 500;
+  display: block; padding-bottom: 8px; margin-bottom: 8px;
+  border-bottom: 1px solid rgb(var(--border-soft));
+}
+.trace .frame { display: block; padding-left: 20px; text-indent: -20px; }
+.trace .num   { color: rgb(var(--dim)); }
+.trace .path  { color: rgb(var(--violet)); }
+.trace .meth  { color: rgb(var(--text)); }
+
+.case-label {
+  font-size: 11px; font-weight: 600;
+  color: rgb(var(--violet));
+  letter-spacing: 0.06em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-bottom: 6px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   CLASS NAME (mono-styled big title for detail pages)
+   ───────────────────────────────────────────────────────────── */
+
+.class-name {
+  font-family: 'Geist Mono', monospace;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+  color: rgb(var(--text));
+}
