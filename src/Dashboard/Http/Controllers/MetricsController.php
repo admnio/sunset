@@ -54,7 +54,12 @@ final class MetricsController extends Controller
         FailedJobRepository $failed,
     ): InertiaResponse|JsonResponse {
         $snapshots = $metrics->snapshotsForJob($name);
-        $avgMs = (int) round($metrics->runtimeForJob($name));
+        // v2.2.1: runtimeForJob() returns the mean in SECONDS (it's
+        // runtime_sum / throughput, both recorded in seconds). The ClassDetail
+        // page renders this as a millisecond value, so convert here. The v2.2
+        // bucket histogram + percentiles are already in ms; only the avg tile
+        // needed this fix.
+        $avgMs = (int) round($metrics->runtimeForJob($name) * 1000);
 
         // v2.2.0: real percentiles from the bucket histogram via
         // linear-interpolation across bucket boundaries. percentilesForJob()
