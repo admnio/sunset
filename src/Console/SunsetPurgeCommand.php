@@ -6,6 +6,7 @@ use Admnio\Sunset\Contracts\MasterSupervisorRepository;
 use Admnio\Sunset\Contracts\ProcessRepository;
 use Admnio\Sunset\Contracts\SupervisorRepository;
 use Admnio\Sunset\Supervisor\MasterSupervisor;
+use Admnio\Sunset\Support\Platform;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -97,7 +98,12 @@ class SunsetPurgeCommand extends Command
             ->whenNotEmpty(fn () => $this->components->info('Sending TERM signal to expired processes of ['.$master.']'))
             ->each(function ($processId) use ($master, $signal) {
                 $this->components->task("Process: $processId", function () use ($processId, $signal) {
-                    exec("kill -s {$signal} {$processId}");
+                    if (Platform::isWindows()) {
+                        // No POSIX signals under cmd.exe; force-kill the process tree.
+                        exec("taskkill /F /T /PID {$processId}");
+                    } else {
+                        exec("kill -s {$signal} {$processId}");
+                    }
                 });
 
                 $this->processes->forgetOrphans($master, [$processId]);

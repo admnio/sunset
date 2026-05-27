@@ -4,6 +4,7 @@ namespace Admnio\Sunset\Supervisor;
 
 use Admnio\Sunset\Events\UnableToLaunchProcess;
 use Admnio\Sunset\Events\WorkerProcessRestarting;
+use Admnio\Sunset\Support\Platform;
 use Carbon\CarbonImmutable;
 use Closure;
 use Symfony\Component\Process\Exception\ExceptionInterface;
@@ -123,9 +124,16 @@ class WorkerProcess
      */
     public function terminate()
     {
-        if (defined('SIGTERM')) {
+        if (Platform::handlesSignals() && defined('SIGTERM')) {
             $this->sendSignal(SIGTERM);
+
+            return;
         }
+
+        // Signal-less environments (e.g. Windows) cannot deliver SIGTERM, so
+        // stop the process directly. Symfony's stop() escalates to a forced
+        // tree kill (taskkill /F /T) when the process does not exit in time.
+        $this->stop();
     }
 
     /**

@@ -23,7 +23,9 @@ class SupervisorCommandStringTest extends TestCase
         $command = SupervisorCommandString::fromOptions($options);
 
         $this->assertStringContainsString('sunset:supervise', $command);
-        $this->assertStringContainsString("'master-1:supervisor-1'", $command);
+        // The supervisor name is shell-escaped per-platform (single quotes on
+        // POSIX, double quotes under cmd.exe), so assert the escaped form.
+        $this->assertStringContainsString(escapeshellarg('master-1:supervisor-1'), $command);
         $this->assertStringContainsString("sqs", $command);
         $this->assertStringContainsString('--balance=auto', $command);
         $this->assertStringContainsString('--max-processes=10', $command);

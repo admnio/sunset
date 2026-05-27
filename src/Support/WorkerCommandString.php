@@ -13,7 +13,11 @@ class WorkerCommandString
 {
     public static function fromOptions(SupervisorOptions $options): string
     {
-        $command = "exec \"%s\" artisan sunset:worker %s --name=%s --supervisor=%s --backoff=%s --max-time=%s --max-jobs=%s --memory=%s --queue=%s --sleep=%s --timeout=%s --tries=%s";
+        // The `exec` builtin (which lets signals pass straight through to the
+        // worker) is Unix-only; cmd.exe has no equivalent, so omit it there.
+        $prefix = Platform::isWindows() ? '' : 'exec ';
+
+        $command = $prefix."\"%s\" artisan sunset:worker %s --name=%s --supervisor=%s --backoff=%s --max-time=%s --max-jobs=%s --memory=%s --queue=%s --sleep=%s --timeout=%s --tries=%s";
 
         if ($options->rest) {
             $command .= ' --rest='.$options->rest;

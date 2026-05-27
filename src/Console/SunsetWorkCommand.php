@@ -5,6 +5,7 @@ namespace Admnio\Sunset\Console;
 use Admnio\Sunset\Contracts\MasterSupervisorRepository;
 use Admnio\Sunset\Supervisor\MasterSupervisor;
 use Admnio\Sunset\Supervisor\ProvisioningPlan;
+use Admnio\Sunset\Support\Platform;
 use Illuminate\Console\Command;
 use Symfony\Component\Console\Attribute\AsCommand;
 
@@ -62,16 +63,31 @@ class SunsetWorkCommand extends Command
 
         $this->components->info('Sunset started successfully.');
 
-        pcntl_async_signals(true);
+        if (Platform::handlesSignals()) {
+            pcntl_async_signals(true);
 
-        pcntl_signal(SIGINT, function () use ($master) {
-            $this->output->writeln('');
-
-            $this->components->info('Shutting down.');
-
-            return $master->terminate();
-        });
+            pcntl_signal(SIGINT, fn () => $this->shutdown($master));
+        } elseif (function_exists('sapi_windows_set_ctrl_handler')) {
+            // Windows has no SIGINT via pcntl; hook the console Ctrl-C event
+            // so the master can still scale its children down gracefully.
+            sapi_windows_set_ctrl_handler(fn () => $this->shutdown($master));
+        }
 
         $master->monitor();
+    }
+
+    /**
+     * Gracefully terminate the master supervisor.
+     *
+     * @param  \Admnio\Sunset\Supervisor\MasterSupervisor  $master
+     * @return void
+     */
+    protected function shutdown($master)
+    {
+        $this->output->writeln('');
+
+        $this->components->info('Shutting down.');
+
+        $master->terminate();
     }
 }

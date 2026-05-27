@@ -91,7 +91,7 @@ class SunsetSuperviseCommand extends Command
      */
     protected function start($supervisor)
     {
-        if ($supervisor->options->nice) {
+        if ($supervisor->options->nice && function_exists('proc_nice')) {
             proc_nice($supervisor->options->nice);
         }
 

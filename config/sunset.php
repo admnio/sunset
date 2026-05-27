@@ -7,6 +7,27 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Compatibility (signal-less) mode
+    |--------------------------------------------------------------------------
+    |
+    | Sunset's supervisor normally uses POSIX signals (ext-pcntl / ext-posix)
+    | to pause, restart, and terminate workers. Those extensions do not exist
+    | on Windows, so Sunset falls back to a signal-less "compatibility mode"
+    | automatically whenever ext-pcntl is unavailable.
+    |
+    | In this mode the master runs in the foreground and is stopped with
+    | Ctrl-C; child supervisors and workers are stopped via the process API
+    | (taskkill on Windows) instead of signals, and the signal-based pause /
+    | continue / restart / terminate controls become no-ops.
+    |
+    | Leave this null to auto-detect. Set it to true to force compatibility
+    | mode on (e.g. to exercise the Windows code path on Linux/macOS). Setting
+    | it to false will NOT enable signals where ext-pcntl is missing.
+    */
+    'compatibility_mode' => env('SUNSET_COMPATIBILITY_MODE'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Dashboard (v0.8.0)
     |--------------------------------------------------------------------------
     |
@@ -88,6 +109,18 @@ return [
             // Redis connection name (from config/database.php) used by Sunset's
             // workload queries. Typically the same connection your queues live on.
             'workload_connection' => env('SUNSET_REDIS_WORKLOAD_CONN', 'default'),
+        ],
+
+        'database' => [
+            // Database connection name (from config/database.php) used for the
+            // dashboard's Workload depth query. null uses the default
+            // connection. Set this to match the connection your `database`
+            // queue lives on. (Sunset's own stats always live in Redis.)
+            'workload_connection' => env('SUNSET_DATABASE_WORKLOAD_CONN'),
+
+            // The jobs table name — must match config/queue.php
+            // connections.<your-database-connection>.table.
+            'table' => env('SUNSET_DATABASE_TABLE', 'jobs'),
         ],
 
         'rabbitmq' => [

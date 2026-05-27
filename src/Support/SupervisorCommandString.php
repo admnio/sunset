@@ -13,7 +13,14 @@ class SupervisorCommandString
 {
     public static function fromOptions(SupervisorOptions $options): string
     {
-        $command = "exec \"%s\" artisan sunset:supervise '%s' %s --workers-name=%s --balance=%s --max-processes=%s --min-processes=%s --balance-cooldown=%s --balance-max-shift=%s --parent-id=%s";
+        // The `exec` builtin (which lets signals pass straight through to the
+        // supervisor) is Unix-only; cmd.exe has no equivalent, so omit it
+        // there. The supervisor name is escaped per-platform via
+        // escapeshellarg() rather than hard-coded single quotes, which cmd.exe
+        // does not treat as quoting.
+        $prefix = Platform::isWindows() ? '' : 'exec ';
+
+        $command = $prefix."\"%s\" artisan sunset:supervise %s %s --workers-name=%s --balance=%s --max-processes=%s --min-processes=%s --balance-cooldown=%s --balance-max-shift=%s --parent-id=%s";
 
         if (! is_null($options->autoScalingStrategy)) {
             $command .= " --auto-scaling-strategy=".$options->autoScalingStrategy;
@@ -24,7 +31,7 @@ class SupervisorCommandString
         return sprintf(
             $command,
             self::phpBinary(),
-            $options->name,
+            escapeshellarg($options->name),
             $options->connection,
             $options->workersName,
             $options->balance,

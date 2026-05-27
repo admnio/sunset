@@ -2,6 +2,7 @@
 
 namespace Admnio\Sunset\Supervisor;
 
+use Admnio\Sunset\Support\Platform;
 use Illuminate\Support\Arr;
 
 /**
@@ -25,6 +26,10 @@ trait ListensForSignals
      */
     protected function listenForSignals()
     {
+        if (! Platform::handlesSignals()) {
+            return;
+        }
+
         pcntl_async_signals(true);
 
         pcntl_signal(SIGTERM, function () {
