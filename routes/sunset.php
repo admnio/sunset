@@ -42,6 +42,10 @@ Route::middleware([Authorize::class, \Inertia\Middleware::class, SetSunsetInerti
         Route::get('/activity',         [C\ActivityController::class, 'show'])->name('activity');
         Route::get('/activity/page',    [C\ActivityController::class, 'page'])->name('activity.page');
 
+        // Command-palette search index — real queue + job-class lists, lazy
+        // loaded once when the palette first opens.
+        Route::get('/search-index',     [C\SearchController::class, 'index'])->name('search-index');
+
         // POST actions — write through to native repositories.
         Route::post('/jobs/failed/{id}/retry',    [C\FailedJobsController::class,  'retry'])->name('jobs.failed.retry');
         Route::post('/jobs/failed/retry',         [C\FailedJobsController::class,  'retryBulk'])->name('jobs.failed.retry-bulk');

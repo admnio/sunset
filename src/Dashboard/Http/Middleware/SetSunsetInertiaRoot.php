@@ -2,8 +2,10 @@
 
 namespace Admnio\Sunset\Dashboard\Http\Middleware;
 
+use Admnio\Sunset\Contracts\FailedJobRepository;
 use Admnio\Sunset\Dashboard\HealthSummary;
 use Closure;
+use Composer\InstalledVersions;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
@@ -27,8 +29,10 @@ use Throwable;
  */
 class SetSunsetInertiaRoot
 {
-    public function __construct(private readonly HealthSummary $summary)
-    {
+    public function __construct(
+        private readonly HealthSummary $summary,
+        private readonly FailedJobRepository $failures,
+    ) {
     }
 
     public function handle(Request $request, Closure $next): Response
@@ -38,10 +42,40 @@ class SetSunsetInertiaRoot
         Inertia::share('sunset', [
             'pollIntervalSeconds' => (int) config('sunset.dashboard.poll_interval_seconds', 3),
             'path'                => config('sunset.dashboard.path', 'sunset'),
+            'env'                 => (string) config('app.env'),
+            'version'             => $this->sunsetVersion(),
+            'failedCount'         => $this->safeFailedCount(),
             'health'              => $this->safeHealth(),
         ]);
 
         return $next($request);
+    }
+
+    /**
+     * Installed package version (e.g. "2.4.1", "dev-main"), read from
+     * Composer's runtime metadata. Falls back to "dev" for path/unresolved
+     * installs. This is the same notion of "version" the Health page reports.
+     */
+    private function sunsetVersion(): string
+    {
+        try {
+            return InstalledVersions::getPrettyVersion('admnio/sunset') ?? 'dev';
+        } catch (Throwable) {
+            return 'dev';
+        }
+    }
+
+    /**
+     * Total failed-job backlog, used for the sidebar "Failed" badge. Never let
+     * a transient transport outage 500 the dashboard — degrade to 0.
+     */
+    private function safeFailedCount(): int
+    {
+        try {
+            return $this->failures->totalFailed();
+        } catch (Throwable) {
+            return 0;
+        }
     }
 
     /**

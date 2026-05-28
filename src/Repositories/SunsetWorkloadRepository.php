@@ -22,6 +22,17 @@ class SunsetWorkloadRepository implements WorkloadRepository
         private Cache $cache,
         private array $queues,
         private int $cacheTtlSeconds,
+        /**
+         * The transport names to query for workload depth. Restricting this to
+         * the transports actually in use (derived from the configured
+         * supervisors' connections) avoids blocking the dashboard on backends
+         * that aren't running — e.g. querying SQS/RabbitMQ on a deployment that
+         * only uses the database queue would otherwise stall on connect
+         * timeouts. Empty means "all registered transports" (legacy behavior).
+         *
+         * @var list<string>
+         */
+        private array $transportNames = [],
     ) {
     }
 
@@ -77,7 +88,16 @@ class SunsetWorkloadRepository implements WorkloadRepository
     private function mergeWorkloadAcrossTransports(): array
     {
         $merged = [];
-        foreach ($this->transports->names() as $name) {
+
+        // Only query the transports actually in use. Falls back to every
+        // registered transport when no scope was provided (legacy behavior),
+        // and always intersects with what's registered so a stale config name
+        // can't trigger a lookup for an unregistered transport.
+        $names = $this->transportNames
+            ? array_values(array_intersect($this->transportNames, $this->transports->names()))
+            : $this->transports->names();
+
+        foreach ($names as $name) {
             foreach ($this->transports->get($name)->workload($this->queues) as $record) {
                 $queue = $record['name'];
                 // v1.3.0: tag the record with the transport name so the

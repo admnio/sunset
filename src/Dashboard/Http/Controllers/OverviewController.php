@@ -2,8 +2,8 @@
 
 namespace Admnio\Sunset\Dashboard\Http\Controllers;
 
+use Admnio\Sunset\Contracts\ActivityRepository;
 use Admnio\Sunset\Contracts\FailedJobRepository;
-use Admnio\Sunset\Contracts\JobRepository;
 use Admnio\Sunset\Contracts\MasterSupervisorRepository;
 use Admnio\Sunset\Contracts\MetricsRepository;
 use Admnio\Sunset\Contracts\SupervisorRepository;
@@ -25,22 +25,34 @@ final class OverviewController extends Controller
         WorkloadRepository $workload,
         SupervisorRepository $supervisors,
         MasterSupervisorRepository $masters,
-        JobRepository $jobs,
+        ActivityRepository $activity,
         MetricsRepository $metrics,
         FailedJobRepository $failures,
     ): InertiaResponse|JsonResponse {
         $totalThroughput   = $this->totalThroughput($metrics);
         $failuresLastHour  = $failures->countRecentlyFailed();
-        $failureRatePct    = $this->failureRatePct($totalThroughput, $failuresLastHour);
+        // Failure rate is failures / (completions + failures). Use the robust
+        // recent-completion count (live counter + snapshot history) rather than
+        // the latest-snapshot rate, so it stays accurate even before the
+        // snapshot scheduler has run.
+        $failureRatePct    = $this->failureRatePct($this->recentCompletions($metrics), $failuresLastHour);
 
         $props = [
             'workload'            => $workload->get(),
             'supervisors'         => $supervisors->all(),
             'masters'             => $masters->all(),
-            'recent'              => $jobs->getRecent()->all(),
+            // Recent activity-stream events (same shape as the Activity page),
+            // previewed in the Overview's "Recent activity" panel.
+            'recent'              => array_map(
+                static fn ($e) => $e->toArray(),
+                $activity->recent(10),
+            ),
             'throughput_per_min'  => HealthSummary::formatCount($totalThroughput),
             'failure_rate_pct'    => $failureRatePct,
             'failures_last_hour'  => $failuresLastHour,
+            // Real recent throughput trend for the Throughput stat-card
+            // sparkline. Empty until snapshots exist.
+            'throughput_series'   => $this->aggregateMetricSeries($metrics, 'throughput'),
         ];
 
         return $this->inertiaOrJson($request, 'Sunset/Overview', $props);
@@ -70,9 +82,9 @@ final class OverviewController extends Controller
      * isn't enough throughput to compute a meaningful ratio (avoids divide-
      * by-zero and the misleading 0.00% reading on idle dashboards).
      */
-    private function failureRatePct(int $throughput, int $failures): string
+    private function failureRatePct(int $completions, int $failures): string
     {
-        $total = $throughput + $failures;
+        $total = $completions + $failures;
         if ($total <= 0) {
             return '—';
         }

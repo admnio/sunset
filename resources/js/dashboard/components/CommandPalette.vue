@@ -13,62 +13,63 @@
 -->
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import { usePaletteStore } from '../stores/paletteStore.js';
-import { useToasts } from '../composables/useToasts.js';
 
 const palette = usePaletteStore();
-const toasts = useToasts();
+const page = usePage();
 
 const query = ref('');
 const inputEl = ref(null);
 const focused = ref(0);
 
+// Sunset dashboard base path (shared by SetSunsetInertiaRoot middleware).
+const basePath = computed(() => {
+  const p = page.props?.sunset?.path ?? 'sunset';
+  return '/' + String(p).replace(/^\/+/, '');
+});
+
 // ─── Catalog ────────────────────────────────────────────────────────
 // Pages — all 13 dashboard routes. `meta` is the G-prefix hint.
 
-const pages = [
-  { label: 'Overview',          href: '/sunset',                 icon: '#i-home',     meta: 'G O' },
-  { label: 'Activity stream',   href: '/sunset/activity',        icon: '#i-activity', meta: 'G A' },
-  { label: 'Workload',          href: '/sunset/workload',        icon: '#i-list',     meta: 'G W' },
-  { label: 'Metrics',           href: '/sunset/metrics',         icon: '#i-chart',    meta: 'G M' },
-  { label: 'Failed jobs',       href: '/sunset/jobs/failed',     icon: '#i-alert',    meta: 'G F' },
-  { label: 'Supervisors',       href: '/sunset/supervisors',     icon: '#i-server',   meta: 'G S' },
-  { label: 'Health',            href: '/sunset/health',          icon: '#i-heart',    meta: 'G H' },
-  { label: 'Pending jobs',      href: '/sunset/jobs/pending',    icon: '#i-clock',    meta: 'G P' },
-  { label: 'Completed jobs',    href: '/sunset/jobs/completed',  icon: '#i-check',    meta: 'G C' },
-  { label: 'Recent jobs',       href: '/sunset/jobs/recent',     icon: '#i-list',     meta: 'G R' },
-  { label: 'Rate limits',       href: '/sunset/rate-limits',     icon: '#i-gauge',    meta: 'G L' },
-  { label: 'Batches',           href: '/sunset/batches',         icon: '#i-layers',   meta: 'G B' },
-  { label: 'Monitoring (tags)', href: '/sunset/monitoring',      icon: '#i-tag',      meta: 'G T' },
-];
+const pages = computed(() => {
+  const b = basePath.value;
+  return [
+    { label: 'Overview',          href: b,                    icon: '#i-home',     meta: 'G O' },
+    { label: 'Activity stream',   href: `${b}/activity`,      icon: '#i-activity', meta: 'G A' },
+    { label: 'Workload',          href: `${b}/workload`,      icon: '#i-list',     meta: 'G W' },
+    { label: 'Metrics',           href: `${b}/metrics`,       icon: '#i-chart',    meta: 'G M' },
+    { label: 'Failed jobs',       href: `${b}/jobs/failed`,   icon: '#i-alert',    meta: 'G F' },
+    { label: 'Supervisors',       href: `${b}/supervisors`,   icon: '#i-server',   meta: 'G S' },
+    { label: 'Health',            href: `${b}/health`,        icon: '#i-heart',    meta: 'G H' },
+    { label: 'Pending jobs',      href: `${b}/jobs/pending`,  icon: '#i-clock',    meta: 'G P' },
+    { label: 'Completed jobs',    href: `${b}/jobs/completed`,icon: '#i-check',    meta: 'G C' },
+    { label: 'Recent jobs',       href: `${b}/jobs/recent`,   icon: '#i-list',     meta: 'G R' },
+    { label: 'Rate limits',       href: `${b}/rate-limits`,   icon: '#i-gauge',    meta: 'G L' },
+    { label: 'Batches',           href: `${b}/batches`,       icon: '#i-layers',   meta: 'G B' },
+    { label: 'Monitoring (tags)', href: `${b}/monitoring`,    icon: '#i-tag',      meta: 'G T' },
+  ];
+});
 
-// Queues — decorative samples; wire to real data in Phase 5+.
-const queues = [
-  { label: 'emails',    meta: 'redis · 128 pending',   icon: '#i-list' },
-  { label: 'webhooks',  meta: 'sqs · 2,431 pending',   icon: '#i-list' },
-  { label: 'indexing',  meta: 'redis · backlog 48s',   icon: '#i-list' },
-  { label: 'geocode',   meta: 'redis · paused',        icon: '#i-list' },
-];
+// Queues + job classes — real data, lazy-loaded from /search-index the first
+// time the palette opens (kept off the hot path of normal navigation).
+const queues = ref([]);
+const classes = ref([]);
+const indexLoaded = ref(false);
 
-// Job classes — decorative placeholders. Navigation target lands on the
-// Phase-7 ClassDetail route — page itself doesn't exist yet but the URL
-// is fine to point at for the mockup-stage build.
-const classes = [
-  { label: 'App\\Jobs\\NotifySlack',        meta: '405/min',           icon: '#i-zap' },
-  { label: 'App\\Jobs\\IndexProduct',       meta: '196/min · 2 failed', icon: '#i-zap' },
-  { label: 'App\\Jobs\\SendWelcomeEmail',   meta: '218/min',           icon: '#i-zap' },
-];
-
-// Actions — fire a confirmation toast and close.
-const actions = [
-  { label: 'Pause queue…',         meta: 'action',    icon: '#i-pause',
-    toast: { kind: 'ok',   title: 'Queue paused.', sub: 'Workers will stop popping on next loop.', undo: true } },
-  { label: 'Retry all failed',     meta: 'action · ⌘⏎', icon: '#i-retry',
-    toast: { kind: 'ok',   title: 'Retry queued.', sub: '2 jobs re-enqueued.' } },
-  { label: 'Re-probe transports',  meta: 'action',    icon: '#i-refresh',
-    toast: { kind: 'info', title: 'Refreshed.' } },
-];
+async function loadIndex() {
+  if (indexLoaded.value) return;
+  indexLoaded.value = true;
+  try {
+    const res = await fetch(`${basePath.value}/search-index`, { headers: { Accept: 'application/json' } });
+    if (!res.ok) { indexLoaded.value = false; return; }
+    const json = await res.json();
+    queues.value = (json.queues ?? []).map((q) => ({ ...q, icon: '#i-list' }));
+    classes.value = (json.classes ?? []).map((c) => ({ ...c, icon: '#i-zap' }));
+  } catch {
+    indexLoaded.value = false; // allow a retry on the next open
+  }
+}
 
 // ─── Filtering ──────────────────────────────────────────────────────
 function matches(item, q) {
@@ -80,10 +81,9 @@ function matches(item, q) {
 const groups = computed(() => {
   const q = query.value.trim().toLowerCase();
   return [
-    { key: 'pages',   title: 'Pages',       kind: 'page',   items: pages.filter((i) => matches(i, q)) },
-    { key: 'queues',  title: 'Queues',      kind: 'queue',  items: queues.filter((i) => matches(i, q)) },
-    { key: 'classes', title: 'Job classes', kind: 'class',  items: classes.filter((i) => matches(i, q)) },
-    { key: 'actions', title: 'Actions',     kind: 'action', items: actions.filter((i) => matches(i, q)) },
+    { key: 'pages',   title: 'Pages',       kind: 'page',  items: pages.value.filter((i) => matches(i, q)) },
+    { key: 'queues',  title: 'Queues',      kind: 'queue', items: queues.value.filter((i) => matches(i, q)) },
+    { key: 'classes', title: 'Job classes', kind: 'class', items: classes.value.filter((i) => matches(i, q)) },
   ].filter((g) => g.items.length > 0);
 });
 
@@ -101,6 +101,7 @@ const flat = computed(() => {
 // ─── Open / close / focus management ────────────────────────────────
 watch(() => palette.isOpen, async (isOpen) => {
   if (isOpen) {
+    loadIndex();
     query.value = '';
     focused.value = 0;
     await nextTick();
@@ -121,15 +122,11 @@ function activate(idx) {
     palette.close();
     router.visit(item.href);
   } else if (kind === 'queue') {
-    // Mockup-stage: queues are decorative; just toast for now.
     palette.close();
-    toasts.push({ kind: 'info', title: `Queue: ${item.label}`, sub: 'Queue drill-down lands in a later phase.' });
+    router.visit(`${basePath.value}/workload`);
   } else if (kind === 'class') {
     palette.close();
-    router.visit(`/sunset/metrics/jobs/${encodeURIComponent(item.label)}`);
-  } else if (kind === 'action') {
-    palette.close();
-    toasts.push(item.toast ?? { kind: 'ok', title: item.label, sub: 'Action queued.' });
+    router.visit(`${basePath.value}/metrics/jobs/${encodeURIComponent(item.label)}/detail`);
   }
 }
 
@@ -177,7 +174,7 @@ function flatIndex(groupKind, itemIndex) {
           type="text"
           autocomplete="off"
           spellcheck="false"
-          placeholder="Jump to anything — pages, queues, job classes, supervisors…"
+          placeholder="Jump to anything — pages, queues, job classes…"
           aria-label="Search palette"
         />
         <span class="esc">esc</span>
@@ -218,7 +215,7 @@ function flatIndex(groupKind, itemIndex) {
         <span class="pf-grp"><span class="kbd">↑</span><span class="kbd">↓</span> navigate</span>
         <span class="pf-grp"><span class="kbd">↵</span> open</span>
         <span class="pf-grp"><span class="kbd">esc</span> close</span>
-        <span class="right">Search across 13 pages, {{ queues.length }} queues, {{ classes.length }} classes</span>
+        <span class="right">Search across {{ pages.length }} pages, {{ queues.length }} queues, {{ classes.length }} classes</span>
       </div>
     </div>
   </div>

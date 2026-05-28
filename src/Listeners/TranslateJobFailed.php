@@ -23,6 +23,7 @@ class TranslateJobFailed
                 'message' => $event->exception->getMessage(),
                 'file' => $event->exception->getFile(),
                 'line' => $event->exception->getLine(),
+                'trace' => $event->exception->getTraceAsString(),
             ]),
         ]);
 

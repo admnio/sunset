@@ -105,13 +105,18 @@ class SunsetServiceProviderTest extends TestCase
         }
     }
 
-    public function test_metrics_snapshot_is_scheduled_every_five_minutes(): void
+    public function test_sunset_does_not_auto_register_maintenance_schedules(): void
     {
+        // Sunset deliberately leaves cron registration to the consumer's
+        // routes/console.php (or App\Console\Kernel) so scheduling is
+        // explicit and visible. Guards against accidentally reintroducing
+        // auto-registration in the service provider.
         $schedule = $this->app->make(\Illuminate\Console\Scheduling\Schedule::class);
-        $events = collect($schedule->events());
-        $snapshot = $events->first(fn ($e) => $e->description === 'sunset-snapshot');
-        $this->assertNotNull($snapshot, 'sunset-snapshot should be scheduled');
-        $this->assertSame('*/5 * * * *', $snapshot->expression);
+        $names = collect($schedule->events())->map(fn ($e) => $e->description)->all();
+
+        foreach (['sunset-sweep-delayed', 'sunset-snapshot', 'sunset-sweep-rate-limit-slots', 'sunset-sweep-worker-metrics'] as $name) {
+            $this->assertNotContains($name, $names, "Sunset should not auto-register {$name}");
+        }
     }
 
     public function test_sunset_supervisor_contracts_resolve_to_redis_implementations(): void

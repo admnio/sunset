@@ -20,9 +20,10 @@ const totalPending = computed(() =>
 const totalProcesses = computed(() =>
   queues.value.reduce((s, q) => s + Number(q.processes ?? 0), 0),
 );
-// TODO(v2-wire-data): controller doesn't yet expose worker-slot capacity nor
-// throughput-per-queue. Phase 7 will add them; placeholders for now.
-const workerCapacity = computed(() => current.value.worker_capacity ?? 46);
+// Real worker-slot capacity from the controller (sum of supervisor
+// max_processes). 0 when no supervisors report — the template then shows just
+// the active count without a misleading "/capacity" or utilization %.
+const workerCapacity = computed(() => Number(current.value.worker_capacity ?? 0));
 const weightedWait = computed(() => {
   const total = queues.value.reduce((s, q) => s + Number(q.length ?? 0), 0);
   if (!total) return 0;
@@ -33,7 +34,7 @@ const weightedWait = computed(() => {
   return Math.round(weighted / total);
 });
 const etaDrainSecs = computed(() => {
-  const tp = current.value.throughput_per_min ?? 1200;
+  const tp = Number(current.value.throughput_per_min ?? 0);
   if (!tp || !totalPending.value) return 0;
   return Math.round((totalPending.value / tp) * 60);
 });
@@ -90,10 +91,10 @@ function togglePause(row) {
         </div>
         <div class="stat-value">
           {{ totalProcesses }}
-          <span class="unit">/ {{ workerCapacity }}</span>
+          <span v-if="workerCapacity" class="unit">/ {{ workerCapacity }}</span>
         </div>
         <div class="stat-delta">
-          {{ workerCapacity ? Math.round((totalProcesses / workerCapacity) * 100) : 0 }}% utilization
+          {{ workerCapacity ? `${Math.round((totalProcesses / workerCapacity) * 100)}% utilization` : 'active workers' }}
         </div>
       </div>
       <div class="stat">

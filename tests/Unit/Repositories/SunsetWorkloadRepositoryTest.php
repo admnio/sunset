@@ -207,6 +207,76 @@ class SunsetWorkloadRepositoryTest extends TestCase
         $this->assertSame('sqs', $workload[0]['connection']);
     }
 
+    public function test_only_queries_transports_within_the_provided_scope(): void
+    {
+        $database = Mockery::mock(Transport::class);
+        $database->shouldReceive('name')->andReturn('database');
+        $database->shouldReceive('workload')->with(['default'])->andReturn([
+            ['name' => 'default', 'length' => 3, 'wait' => 0, 'processes' => 0, 'split_queues' => null],
+        ]);
+
+        // The SQS transport is registered but out of scope — it must NOT be
+        // queried. Querying an unused/unreachable backend (e.g. SQS or RabbitMQ
+        // on a database-only deployment) is what stalled the dashboard on
+        // connect timeouts. shouldNotReceive() fails the test if it's touched.
+        $sqs = Mockery::mock(Transport::class);
+        $sqs->shouldReceive('name')->andReturn('sqs');
+        $sqs->shouldNotReceive('workload');
+
+        $registry = new TransportRegistry();
+        $registry->register($database);
+        $registry->register($sqs);
+
+        $metrics = Mockery::mock(MetricsRepository::class);
+        $metrics->shouldReceive('runtimeForQueue')->andReturn(1.0);
+
+        $supervisors = Mockery::mock(SupervisorRepository::class);
+        $supervisors->shouldReceive('all')->andReturn([]);
+
+        $cache = Mockery::mock(Cache::class);
+        $cache->shouldReceive('remember')->andReturnUsing(fn ($k, $t, $cb) => $cb());
+
+        $repo = new SunsetWorkloadRepository(
+            $registry, $metrics, $supervisors, $cache, ['default'], 5, ['database']
+        );
+
+        $workload = $repo->get();
+        $byName = collect($workload)->keyBy('name')->all();
+
+        $this->assertArrayHasKey('default', $byName);
+        $this->assertSame(3, $byName['default']['length']);
+        $this->assertSame('database', $byName['default']['connection']);
+    }
+
+    public function test_empty_scope_falls_back_to_all_registered_transports(): void
+    {
+        $redis = Mockery::mock(Transport::class);
+        $redis->shouldReceive('name')->andReturn('redis');
+        $redis->shouldReceive('workload')->with(['default'])->andReturn([
+            ['name' => 'default', 'length' => 9, 'wait' => 0, 'processes' => 0, 'split_queues' => null],
+        ]);
+
+        $registry = new TransportRegistry();
+        $registry->register($redis);
+
+        $metrics = Mockery::mock(MetricsRepository::class);
+        $metrics->shouldReceive('runtimeForQueue')->andReturn(1.0);
+
+        $supervisors = Mockery::mock(SupervisorRepository::class);
+        $supervisors->shouldReceive('all')->andReturn([]);
+
+        $cache = Mockery::mock(Cache::class);
+        $cache->shouldReceive('remember')->andReturnUsing(fn ($k, $t, $cb) => $cb());
+
+        // No scope passed (legacy 6-arg construction) → query everything.
+        $repo = new SunsetWorkloadRepository(
+            $registry, $metrics, $supervisors, $cache, ['default'], 5
+        );
+
+        $workload = $repo->get();
+        $this->assertSame(9, $workload[0]['length']);
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();

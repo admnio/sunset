@@ -2,7 +2,6 @@
 
 namespace Admnio\Sunset;
 
-use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
@@ -34,6 +33,9 @@ use Admnio\Sunset\Console\SunsetMigrateHorizonConfigCommand;
 use Admnio\Sunset\Console\SunsetHorizonRemovedCommand;
 use Admnio\Sunset\Console\SunsetPauseQueueCommand;
 use Admnio\Sunset\Console\SunsetResumeQueueCommand;
+use Admnio\Sunset\Console\SunsetPauseAllCommand;
+use Admnio\Sunset\Console\SunsetResumeAllCommand;
+use Admnio\Sunset\Console\SunsetPauseAndWaitCommand;
 use Admnio\Sunset\Contracts\JobRepository as SunsetJobRepository;
 use Admnio\Sunset\Contracts\FailedJobRepository as SunsetFailedJobRepository;
 use Admnio\Sunset\Contracts\TagRepository as SunsetTagRepository;
@@ -475,6 +477,11 @@ class SunsetServiceProvider extends ServiceProvider
                 // v1.3.0 queue pause/resume:
                 SunsetPauseQueueCommand::class,
                 SunsetResumeQueueCommand::class,
+
+                // Fleet-wide deploy controls (pause all queues / drain):
+                SunsetPauseAllCommand::class,
+                SunsetResumeAllCommand::class,
+                SunsetPauseAndWaitCommand::class,
             ]);
         }
 
@@ -580,36 +587,18 @@ class SunsetServiceProvider extends ServiceProvider
         }
 
         $this->app->booted(function () {
-            $schedule = $this->app->make(Schedule::class);
-
-            $schedule->command('sunset:sweep-delayed')
-                ->everyMinute()
-                ->withoutOverlapping()
-                ->name('sunset-sweep-delayed');
-
-            // Schedule metrics snapshot every 5 minutes via the dedicated command.
-            $schedule->command('sunset:snapshot')
-                ->everyFiveMinutes()
-                ->name('sunset-snapshot')
-                ->withoutOverlapping();
-
-            // v0.7.0: Safety-net reconciliation of orphaned rate-limit
-            // concurrency slots. The listener handles the hot path; this
-            // sweep cleans up leaked slots from crashed workers.
-            $schedule->command('sunset:sweep-rate-limit-slots')
-                ->everyMinute()
-                ->withoutOverlapping()
-                ->name('sunset-sweep-rate-limit-slots');
-
-            // v1.1.0: Safety-net reconciliation for worker telemetry. The
-            // Looping listener writes 30s-TTL hashes and 600s-TTL series; if
-            // a worker dies between reports its PID lingers in the registry
-            // set and the series keys orbit with no anchor. This sweep prunes
-            // both. Runs every minute alongside the rate-limit sweep.
-            $schedule->command(SunsetSweepWorkerMetricsCommand::class)
-                ->everyMinute()
-                ->withoutOverlapping()
-                ->name('sunset-sweep-worker-metrics');
+            // Consumers must opt in to Sunset's maintenance cron jobs from
+            // their own scheduler (routes/console.php on Laravel 11+, or
+            // App\Console\Kernel::schedule() pre-11). Sunset intentionally
+            // does NOT auto-register them — auto-scheduling on package boot
+            // is invisible to operators and surprises consumers. See
+            // README "Scheduling" for the recommended block to paste.
+            //
+            // Recommended:
+            //   Schedule::command('sunset:sweep-delayed')->everyMinute()->withoutOverlapping();
+            //   Schedule::command('sunset:snapshot')->everyFiveMinutes()->withoutOverlapping();
+            //   Schedule::command('sunset:sweep-rate-limit-slots')->everyMinute()->withoutOverlapping();
+            //   Schedule::command('sunset:sweep-worker-metrics')->everyMinute()->withoutOverlapping();
 
             // Register transport connectors in booted() so any vendor provider
             // that also registers a connector under the same name (e.g.
@@ -642,8 +631,53 @@ class SunsetServiceProvider extends ServiceProvider
                 cache: $app->make(Cache::class),
                 queues: $this->resolveQueueList($app),
                 cacheTtlSeconds: (int) $app['config']->get('sunset.workload_cache_ttl', 5),
+                transportNames: $this->resolveActiveTransports($app),
             );
         };
+    }
+
+    /**
+     * Determine which transports the dashboard should query for workload depth.
+     *
+     * Maps every queue connection referenced by the configured supervisors to
+     * its driver, then intersects with the registered transports. This keeps
+     * the workload merge from blocking on backends the deployment doesn't use
+     * (e.g. querying SQS/RabbitMQ when only the database queue is running).
+     * Returns an empty array when nothing resolves, which the repository treats
+     * as "all registered transports".
+     *
+     * @return list<string>
+     */
+    private function resolveActiveTransports($app): array
+    {
+        $config = $app['config'];
+
+        // Support the current `sunset.supervisors` shape and the legacy
+        // `sunset.environments` / `horizon.environments` fallbacks.
+        $blocks = array_merge(
+            (array) $config->get('sunset.supervisors', []),
+            (array) $config->get('sunset.environments', []),
+            (array) $config->get('horizon.environments', []),
+        );
+
+        $connections = [];
+        array_walk_recursive($blocks, function ($value, $key) use (&$connections) {
+            if ($key === 'connection' && is_string($value) && $value !== '') {
+                $connections[] = $value;
+            }
+        });
+
+        $drivers = [];
+        foreach (array_unique($connections) as $connection) {
+            $driver = $config->get("queue.connections.{$connection}.driver");
+            if (is_string($driver)) {
+                $drivers[] = $driver;
+            }
+        }
+
+        $registered = $app->make(TransportRegistry::class)->names();
+
+        return array_values(array_intersect($registered, array_unique($drivers)));
     }
 
     private function validatedPackageConfig(array $config): array

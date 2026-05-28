@@ -14,7 +14,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
  *           may change between minor releases of v1.x. Consumers should depend
  *           on the published Admnio\Sunset\Contracts\* interfaces instead.
  */
-#[AsCommand(name: 'sunset:pause')]
+#[AsCommand(name: 'sunset:pause-master')]
 class SunsetPauseCommand extends Command
 {
     /**
@@ -22,14 +22,14 @@ class SunsetPauseCommand extends Command
      *
      * @var string
      */
-    protected $signature = 'sunset:pause';
+    protected $signature = 'sunset:pause-master';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Pause the master supervisor';
+    protected $description = 'Pause the master supervisor (OS signal; same-host workers only). For deploys across containers use sunset:pause / sunset:pause-and-wait.';
 
     /**
      * Execute the console command.

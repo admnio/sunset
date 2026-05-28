@@ -38,9 +38,7 @@ const hasRight = computed(() => !!slots.right);
     <slot name="search" />
     <slot name="range" />
     <slot />
-    <span v-if="count !== null && count !== undefined" class="filter-count">
-      {{ count }}<template v-if="countLabel"> {{ countLabel }}</template>
-    </span>
+    <span v-if="count !== null && count !== undefined" class="filter-count">{{ countLabel ? `${count} ${countLabel}` : String(count) }}</span>
     <span v-if="hasRight" class="ml-auto inline-flex items-center gap-2">
       <slot name="right" />
     </span>

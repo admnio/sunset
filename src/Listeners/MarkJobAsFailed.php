@@ -5,6 +5,7 @@ namespace Admnio\Sunset\Listeners;
 use Admnio\Sunset\Contracts\FailedJobRepository;
 use Admnio\Sunset\Contracts\JobRepository;
 use Admnio\Sunset\Events\JobFailed;
+use Admnio\Sunset\Support\RecordedThrowable;
 use RuntimeException;
 use Throwable;
 
@@ -31,16 +32,22 @@ class MarkJobAsFailed
         $this->jobs->completed($event->payload, silenced: false);
     }
 
+    /**
+     * Rebuild a Throwable that preserves the *original* failure's identity —
+     * class, file, line, and trace — captured by {@see TranslateJobFailed}.
+     * Returned as a {@see RecordedThrowable} so the failed-job repository can
+     * persist the real origin rather than this listener's call stack.
+     */
     private function reconstructException(?string $data): Throwable
     {
-        if (! $data) {
-            return new RuntimeException('Unknown failure');
-        }
-        $decoded = json_decode($data, true) ?? [];
-        $class = $decoded['class'] ?? RuntimeException::class;
-        $message = $decoded['message'] ?? 'Unknown failure';
-        return class_exists($class) && is_subclass_of($class, Throwable::class)
-            ? new $class($message)
-            : new RuntimeException("[{$class}] {$message}");
+        $decoded = $data ? (json_decode($data, true) ?? []) : [];
+
+        return new RecordedThrowable(
+            originalClass: (string) ($decoded['class'] ?? RuntimeException::class),
+            message: (string) ($decoded['message'] ?? 'Unknown failure'),
+            originalFile: (string) ($decoded['file'] ?? ''),
+            originalLine: (int) ($decoded['line'] ?? 0),
+            originalTrace: (string) ($decoded['trace'] ?? ''),
+        );
     }
 }

@@ -21,11 +21,14 @@ class MarkJobAsComplete
     public function handle(JobCompleted $event): void
     {
         $silenced = (bool) ($event->payload->decoded['silenced'] ?? false);
-        $this->jobs->completed($event->payload, $silenced);
 
         $name = $event->payload->decoded['displayName'] ?? '';
         $pushedAt = (float) ($event->payload->decoded['pushedAt'] ?? microtime(true));
         $runtime = max(0.0, microtime(true) - $pushedAt);
+
+        // Persist the per-job runtime (ms) on the job record so the Recent /
+        // Completed pages can show it — the same figure fed to metrics below.
+        $this->jobs->completed($event->payload, $silenced, $runtime * 1000);
 
         $this->metrics->incrementThroughput($name, $event->queue, $runtime);
     }

@@ -2,7 +2,9 @@
 
 namespace Admnio\Sunset\Dashboard\Http\Controllers;
 
+use Admnio\Sunset\Contracts\MetricsRepository;
 use Admnio\Sunset\Contracts\QueuePauseRepository;
+use Admnio\Sunset\Contracts\SupervisorRepository;
 use Admnio\Sunset\Contracts\WorkloadRepository;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -20,8 +22,12 @@ final class WorkloadController extends Controller
     {
     }
 
-    public function show(Request $request, WorkloadRepository $workload): InertiaResponse|JsonResponse
-    {
+    public function show(
+        Request $request,
+        WorkloadRepository $workload,
+        SupervisorRepository $supervisors,
+        MetricsRepository $metrics,
+    ): InertiaResponse|JsonResponse {
         return $this->inertiaOrJson($request, 'Sunset/Workload', [
             'queues'        => $workload->get(),
             // v1.3.0: surface the currently-paused (connection, queue) pairs so
@@ -29,8 +35,47 @@ final class WorkloadController extends Controller
             // pause/resume button. Included in BOTH the initial Inertia render
             // AND the ?refresh=1 polling branch — PollingShapeContractTest
             // guards against the two branches drifting apart.
-            'paused_queues' => $this->pauses->all(),
+            'paused_queues'      => $this->pauses->all(),
+            // Real worker-slot capacity = sum of every running supervisor's
+            // configured max process count. Drives the "active / capacity"
+            // utilization stat. 0 when no supervisors are reporting.
+            'worker_capacity'    => $this->workerCapacity($supervisors),
+            // Real drain rate for the ETA stat. Matches the Overview hero so
+            // the two pages agree. 0 on an idle dashboard → page shows "—".
+            'throughput_per_min' => $this->totalThroughput($metrics),
         ]);
+    }
+
+    /**
+     * Sum of configured max processes across all reporting supervisors.
+     *
+     * @return int
+     */
+    private function workerCapacity(SupervisorRepository $supervisors): int
+    {
+        $total = 0;
+        foreach ($supervisors->all() as $supervisor) {
+            $total += (int) ($supervisor['options']['maxProcesses'] ?? 0);
+        }
+        return $total;
+    }
+
+    /**
+     * Sum of the latest per-queue snapshot throughput values — the same
+     * derivation OverviewController and HealthSummary use, kept in lockstep.
+     */
+    private function totalThroughput(MetricsRepository $metrics): int
+    {
+        $total = 0;
+        foreach ($metrics->queues() as $queue) {
+            $snapshots = $metrics->snapshotsForQueue((string) $queue);
+            if ($snapshots === []) {
+                continue;
+            }
+            $latest = end($snapshots);
+            $total += (int) ($latest['throughput'] ?? 0);
+        }
+        return $total;
     }
 
     /**

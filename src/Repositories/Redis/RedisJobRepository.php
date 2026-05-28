@@ -18,7 +18,7 @@ class RedisJobRepository implements JobRepository
     public array $keys = [
         'id', 'connection', 'queue', 'name', 'status', 'payload',
         'exception', 'context', 'failed_at', 'completed_at', 'retried_by',
-        'reserved_at', 'delay',
+        'reserved_at', 'delay', 'runtime_ms',
     ];
 
     public int $recentJobExpires;
@@ -70,32 +70,48 @@ class RedisJobRepository implements JobRepository
 
     public function reserved(string $connection, string $queue, JobPayload $payload): void
     {
-        $this->connection()->hmset($this->key("job:{$payload->id()}"), [
-            'status' => 'reserved',
-            'reserved_at' => CarbonImmutable::now()->getTimestamp(),
-        ]);
+        $now = CarbonImmutable::now()->getTimestamp();
+        $this->connection()->pipeline(function ($pipe) use ($payload, $now) {
+            $pipe->hmset($this->key("job:{$payload->id()}"), [
+                'status' => 'reserved',
+                'reserved_at' => $now,
+            ]);
+            // Track in-flight jobs so `sunset:pause-and-wait` can block until the
+            // fleet drains. Scored by reserve time so stale orphans (workers
+            // killed mid-job) can be aged out — see countReserved().
+            $pipe->zadd($this->key('reserved_jobs'), $now, $payload->id());
+        });
     }
 
     public function released(string $connection, string $queue, JobPayload $payload, int $delay = 0): void
     {
-        $this->connection()->hmset($this->key("job:{$payload->id()}"), [
-            'status' => 'pending',
-            'delay' => $delay,
-        ]);
+        $this->connection()->pipeline(function ($pipe) use ($payload, $delay) {
+            $pipe->hmset($this->key("job:{$payload->id()}"), [
+                'status' => 'pending',
+                'delay' => $delay,
+            ]);
+            $pipe->zrem($this->key('reserved_jobs'), $payload->id());
+        });
     }
 
-    public function completed(JobPayload $payload, bool $silenced = false): void
+    public function completed(JobPayload $payload, bool $silenced = false, ?float $runtimeMs = null): void
     {
         $time = (float) CarbonImmutable::now()->getPreciseTimestamp(3);
         $indexKey = $silenced ? $this->key('silenced_jobs') : $this->key('completed_jobs');
 
-        $this->connection()->pipeline(function ($pipe) use ($payload, $time, $indexKey) {
+        $fields = [
+            'status' => 'completed',
+            'completed_at' => CarbonImmutable::now()->getTimestamp(),
+        ];
+        if ($runtimeMs !== null) {
+            $fields['runtime_ms'] = (int) round($runtimeMs);
+        }
+
+        $this->connection()->pipeline(function ($pipe) use ($payload, $time, $indexKey, $fields) {
             $pipe->zrem($this->key('pending_jobs'), $payload->id());
+            $pipe->zrem($this->key('reserved_jobs'), $payload->id());
             $pipe->zadd($indexKey, $time, $payload->id());
-            $pipe->hmset($this->key("job:{$payload->id()}"), [
-                'status' => 'completed',
-                'completed_at' => CarbonImmutable::now()->getTimestamp(),
-            ]);
+            $pipe->hmset($this->key("job:{$payload->id()}"), $fields);
             $pipe->expireat($this->key("job:{$payload->id()}"),
                 CarbonImmutable::now()->addMinutes($this->completedJobExpires)->getTimestamp());
         });
@@ -190,6 +206,20 @@ class RedisJobRepository implements JobRepository
     public function countPending(): int      { return (int) $this->connection()->zcard($this->key('pending_jobs')); }
     public function countCompleted(): int    { return (int) $this->connection()->zcard($this->key('completed_jobs')); }
     public function countSilenced(): int     { return (int) $this->connection()->zcard($this->key('silenced_jobs')); }
+
+    /**
+     * Number of jobs currently reserved (in flight) across the fleet. Backs
+     * `sunset:pause-and-wait`. Entries older than 24h are treated as orphans
+     * from killed workers (the transport will eventually re-release or expire
+     * them) and pruned, so a dead worker can't poison the count indefinitely.
+     */
+    public function countReserved(): int
+    {
+        $staleBefore = CarbonImmutable::now()->subDay()->getTimestamp();
+        $this->connection()->zremrangebyscore($this->key('reserved_jobs'), '-inf', "({$staleBefore}");
+
+        return (int) $this->connection()->zcard($this->key('reserved_jobs'));
+    }
 
     public function trimRecentJobs(): void
     {

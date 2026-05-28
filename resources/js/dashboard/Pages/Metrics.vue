@@ -56,10 +56,11 @@ const heroStats = computed(() => current.value.summary ?? {
   failures_last_hour: 0,
 });
 
-const jobsPerMinSpark = [0.3, 0.4, 0.42, 0.55, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9];
-const jobsPerHourSpark = [0.5, 0.55, 0.5, 0.58, 0.62, 0.6, 0.7, 0.75, 0.78, 0.82];
-const avgRuntimeSpark = [0.5, 0.48, 0.55, 0.5, 0.52, 0.55, 0.5, 0.48, 0.52, 0.5];
-const failureSpark = [0.15, 0.2, 0.18, 0.12, 0.2, 0.1, 0.18, 0.08, 0.05];
+// Real recent trends from the controller (normalized 0..1). Jobs/min and
+// Jobs/hour both reflect the throughput signal; Avg runtime tracks the runtime
+// series. Empty until snapshots exist — the Sparkline then renders nothing.
+const throughputSeries = computed(() => current.value.throughput_series ?? []);
+const runtimeSeries = computed(() => current.value.runtime_series ?? []);
 
 // Build by-queue rows with computed avg + sparkline data
 const queueRows = computed(() =>
@@ -110,7 +111,7 @@ function onJobRowClick(row) {
         </div>
         <div class="stat-value">{{ heroStats.jobs_per_min }}</div>
         <div class="stat-delta">live</div>
-        <Sparkline :points="jobsPerMinSpark" color="violet" :width="92" :height="28" class="stat-spark" />
+        <Sparkline :points="throughputSeries" color="violet" :width="92" :height="28" class="stat-spark" />
       </div>
       <div class="stat">
         <div class="stat-label" v-tooltip="'Cumulative jobs in the last hour'">
@@ -118,7 +119,7 @@ function onJobRowClick(row) {
         </div>
         <div class="stat-value">{{ heroStats.jobs_per_hour }}</div>
         <div class="stat-delta">peak today</div>
-        <Sparkline :points="jobsPerHourSpark" color="blue" :width="92" :height="28" class="stat-spark" />
+        <Sparkline :points="throughputSeries" color="blue" :width="92" :height="28" class="stat-spark" />
       </div>
       <div class="stat">
         <div class="stat-label" v-tooltip="'Average job runtime across all classes'">
@@ -128,7 +129,7 @@ function onJobRowClick(row) {
           {{ heroStats.avg_runtime_ms }}<span class="unit">ms</span>
         </div>
         <div class="stat-delta">p99 {{ heroStats.p99_runtime_ms ?? '—' }}ms</div>
-        <Sparkline :points="avgRuntimeSpark" color="amber" :width="92" :height="28" class="stat-spark" />
+        <Sparkline :points="runtimeSeries" color="amber" :width="92" :height="28" class="stat-spark" />
       </div>
       <div class="stat">
         <div class="stat-label" v-tooltip="'(failed / total) × 100, last 1 hour'">
@@ -136,7 +137,6 @@ function onJobRowClick(row) {
         </div>
         <div class="stat-value red">{{ heroStats.failure_rate_pct }}<span class="unit" style="color: rgb(var(--red)); opacity: 0.7;">%</span></div>
         <div class="stat-delta">{{ heroStats.failures_last_hour }} in last hour</div>
-        <Sparkline :points="failureSpark" color="red" :width="92" :height="28" class="stat-spark" />
       </div>
     </div>
 

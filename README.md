@@ -1,37 +1,32 @@
 # Sunset for Laravel
 
-Supercharged Laravel Horizon replacement. v0.7.0 ships fluent queue rate limiting across all three transports — SQS (v0.2.0), Redis (v0.3.0), and RabbitMQ (v0.6.0).
+A multi-transport queue management platform for Laravel — a replacement for Laravel Horizon with first-class support for SQS, Redis, RabbitMQ, and Database, unified rate limiting, fleet-wide deploy controls, and a dashboard built for clarity.
 
 ## Why
 
-Sunset is the foundation for a multi-transport Horizon replacement: SQS, Redis, and RabbitMQ today (BullMQ and LavinMQ planned) all behind one consistent dashboard with deeper visibility into workers and queues than Horizon offers. v0.7.0 layers a unified rate-limiting subsystem (throttle + concurrency + drop strategies) on top of all three transports. v0.6.0 added RabbitMQ as a third first-class transport. v0.5.0 owns the supervisor process tree — `sunset:work` replaces `php artisan horizon`. v0.4.0 owns the job lifecycle subsystem. The only remaining Horizon dependency is the dashboard (replaced in v1.0.0).
+Sunset is a multi-transport queue management platform for Laravel: SQS, Redis, RabbitMQ, and Database today (BullMQ and LavinMQ planned) — all behind one consistent dashboard with deep visibility into workers and queues. A unified rate-limiting subsystem (throttle + concurrency + drop strategies) layers over every transport, Sunset owns the supervisor process tree (`sunset:work` runs your queues), and Sunset owns the job lifecycle subsystem end-to-end.
+
+**Mix and match transports.** Run different queues on different drivers *simultaneously* — emails on Redis, webhooks on SQS, nightly batches on RabbitMQ, low-volume internal jobs on Database — and supervise, rate-limit, monitor, pause, and observe all of them through the same dashboard, the same metrics, and the same lifecycle events. No re-platforming as your workload grows; route new queues onto whichever driver fits them best.
 
 This release ships:
 
-- Full Laravel Horizon support for Amazon SQS — same dashboard, same metrics, SQS underneath.
-- Full Laravel Horizon support for Redis queues too — same dashboard, same metrics, Sunset-managed event dispatch
-- Full Laravel Horizon support for RabbitMQ queues — same dashboard, same metrics, Sunset-managed event dispatch and delayed-job routing
-- Sunset-owned job lifecycle: events, listeners, repositories, and `JobPayload` live under `Admnio\Sunset\*`. Transports dispatch Sunset events; Sunset listeners record to `sunset:*` Redis keys
-- `sunset:migrate-horizon-keys` artisan command for renaming legacy `horizon:*` keys to `sunset:*` (idempotent, supports `--dry-run`)
-- Throughput metrics (jobs/min, jobs/hour)
-- Recent / Failed / Completed jobs lists with payloads + retry
-- Workload page (pending counts + estimated wait time)
-- Tags and Monitored tags
-- Job batches
-- Retry from dashboard
-- FIFO queues (standard + FIFO)
-- S3 spill-over for payloads > 256 KB (opt-in)
-- Long delays (>15 min) buffered in Redis, swept into SQS
-- Long polling on by default (max 20s WaitTimeSeconds — cheapest SQS setting)
-- `Transport` interface so future drivers plug in without touching SQS code
-- Sunset-owned supervisor process tree: `sunset:work` replaces `php artisan horizon`. Master/Supervisor/Process repositories live under `Admnio\Sunset`. `php artisan horizon` is replaced with a removal notice that exits non-zero.
-- 19 new `sunset:*` artisan commands covering the full Horizon CLI surface: process tree (`work`/`supervise`/`worker`), control (`pause`/`continue`/`pause-supervisor`/`continue-supervisor`/`terminate`/`status`/`supervisors`/`supervisor-status`), maintenance (`clear`/`purge`/`snapshot`/`forget-failed`), operator (`install`/`publish`), migration (`migrate-horizon-config`).
-- `sunset:migrate-horizon-config` artisan command for moving `config/horizon.php`'s `environments` block to `config/sunset.php`'s `supervisors`.
+- **Multi-transport, run concurrently:** Amazon SQS, Redis, RabbitMQ, and Database — pick one, or run several side-by-side. Every transport surfaces the same dashboard data, metrics, lifecycle events, rate limits, pause state, and activity log.
+- **Fleet-wide deploy controls:** `sunset:pause` pauses every configured queue, `sunset:pause-and-wait` pauses + blocks until in-flight jobs drain (with `--timeout`), `sunset:resume` brings them all back. Built for rolling deploys where worker containers may be torn down — uses the Redis-backed pause state so it works across containers.
+- Sunset-owned job lifecycle: events, listeners, repositories, and `JobPayload` live under `Admnio\Sunset\*`. Transports dispatch Sunset events; Sunset listeners record to `sunset:*` Redis keys. Per-job runtimes are recorded on the job record, and failed-job records preserve the real exception origin + trace.
+- Throughput metrics (jobs/min, jobs/hour), per-job runtime, percentiles, and per-class runtime histograms.
+- Recent / Failed / Completed jobs lists with payloads, retry + bulk-delete from the dashboard.
+- Workload page (pending counts, weighted wait, ETA to drain) with live per-queue pause/resume.
+- Tags and Monitored tags; per-tag detail page.
+- Job batches with split progress + failing-batch indicator.
+- SQS specifics: FIFO + standard queues, S3 spill-over for payloads > 256 KB (opt-in), long delays (>15 min) buffered in Redis and swept into SQS, long polling on by default (max 20s WaitTimeSeconds — the cheapest setting).
+- `Transport` interface so future drivers plug in without touching existing transport code.
+- Sunset-owned supervisor process tree: `sunset:work` runs the master + supervisors. Master / Supervisor / Process repositories live under `Admnio\Sunset\Supervisor\*`. Live worker scaling (+/−) from the dashboard.
+- 20+ `sunset:*` artisan commands covering the process tree (`work` / `supervise` / `worker`), fleet deploy controls (`pause` / `resume` / `pause-and-wait`), per-queue control (`pause-queue` / `resume-queue`), per-supervisor control (`pause-supervisor` / `continue-supervisor`), master control (`pause-master` / `continue` / `terminate` / `status` / `supervisors` / `supervisor-status`), maintenance (`clear` / `purge` / `snapshot` / `forget-failed`), and operator (`install` / `publish`).
 - Fluent rate limiting via the `Admnio\Sunset\Facades\Sunset` facade — sliding-window throttle, concurrency semaphores, per-(queue|job-class) limits, dynamic bucket keys, conditional `when()` guards, and three over-limit strategies (release-computed / release-fixed / drop). Zero overhead when no limits are registered.
-- Worker telemetry (v1.1.0): each `sunset:worker` samples its own RSS and CPU usage on the queue Looping event, throttled to once per 5 seconds (configurable). The Supervisors dashboard page renders per-worker RSS / CPU% columns plus a click-to-toggle sparkline showing the last ~100 seconds. CPU% is best-effort on Windows (PHP's `getrusage()` returns zeros there); RSS works everywhere. Disable entirely with `SUNSET_TELEMETRY_ENABLED=false` if you don't want the Redis traffic.
-- Activity log (v1.2.0+): a new `/sunset/activity` dashboard page renders the most recent job failures, rate-limit rejections, worker restarts, and supervisor deployments. Polls every 3 seconds (same cadence as every other page). Default filter shows errors only; toggle to `lifecycle` to see queued/completed jobs. New `Admnio\Sunset\Events\ActivityRecorded` event lets consumers forward activity to Slack / audit logs / external observability. Backed by a capped Redis sorted set (default 5000 events) — disable with `SUNSET_ACTIVITY_ENABLED=false`.
-- Queue pause/resume (v1.3.0): pause individual queues from the Workload page or via `sunset:pause-queue {connection} {queue}` / `sunset:resume-queue` artisan commands. Workers stop popping from paused queues on their next loop iteration (≤ worker sleep interval, default 3s); in-flight jobs continue. Producers can still enqueue — pause is "stop popping," not "stop accepting." Pause/resume actions fire public `QueuePaused` / `QueueResumed` events and show up live in the Activity log. Works uniformly across SQS, Redis, and RabbitMQ. Pause gate fails open on Redis outage — a Redis blip won't halt the fleet.
-- Dashboard v2 (v2.0.0): full reskin to a Linear/Vercel direction — deep slate + violet, Geist + Geist Mono. Tri-state theme toggle (light/dark/system) with `prefers-color-scheme` listener. Sticky service-health strip with live transport probes. Command palette (⌘K), keyboard-shortcuts modal (`?`), global `G + letter` page navigation, toasts on every action. Two new drill-down detail pages: `/sunset/metrics/jobs/{name}/detail` (per-class hero stats + throughput chart + runtime histogram + recent runs/failures) and `/sunset/monitoring/tags/{tag}` (per-tag stats + 24h activity + class breakdown). Sortable + clickable DataTable. Bulk-select with floating action bar on Failed jobs. Zero breaking API changes from v1.x.
+- Worker telemetry (v1.1.0): each `sunset:worker` samples its own RSS and CPU usage on the queue Looping event, throttled to once per 5 seconds (configurable). The Supervisors dashboard renders per-worker RSS / CPU% columns plus a click-to-toggle sparkline showing the last ~100 seconds. CPU% is best-effort on Windows (PHP's `getrusage()` returns zeros there); RSS works everywhere. Disable entirely with `SUNSET_TELEMETRY_ENABLED=false`.
+- Activity log (v1.2.0+): a `/sunset/activity` dashboard page renders job failures, rate-limit rejections, worker restarts, and supervisor deployments. Polls every 3 seconds. Default filter shows errors only; toggle to `lifecycle` to see queued/completed jobs. The `Admnio\Sunset\Events\ActivityRecorded` event lets consumers forward activity to Slack / audit logs / external observability. Backed by a capped Redis sorted set (default 5000 events) — disable with `SUNSET_ACTIVITY_ENABLED=false`.
+- Queue pause/resume (v1.3.0): pause individual queues from the Workload page or via `sunset:pause-queue {connection} {queue}` / `sunset:resume-queue`. Workers stop popping from paused queues on their next loop iteration (≤ worker sleep interval, default 3s); in-flight jobs continue. Producers can still enqueue. Pause/resume actions fire public `QueuePaused` / `QueueResumed` events and appear live in the Activity log. Works uniformly across every transport. Pause gate fails open on Redis outage — a Redis blip won't halt the fleet.
+- Dashboard v2: full Linear/Vercel design — deep slate + violet, Geist + Geist Mono. Tri-state theme toggle (light/dark/system) with `prefers-color-scheme` listener. Sticky service-health strip with live transport probes. Command palette (⌘K), keyboard-shortcuts modal (`?`), global `G + letter` page navigation, toasts on every action. Drill-down detail pages: `/sunset/metrics/jobs/{name}/detail` (per-class hero stats + throughput chart + runtime histogram + recent runs/failures) and `/sunset/monitoring/tags/{tag}` (per-tag stats + 24h activity + class breakdown). Sortable + clickable tables, bulk-select with floating action bar on Failed jobs.
 
 ## Quickstart
 
@@ -71,7 +66,7 @@ public function boot(): void
 
 ### Run the supervisor
 
-Sunset ships its own supervisor — `php artisan sunset:work`. Add it to your process manager (Supervisor, systemd, k8s) in place of `php artisan queue:work` or `php artisan horizon`.
+Sunset ships its own supervisor — `php artisan sunset:work`. Add it to your process manager (Supervisor, systemd, k8s) in place of `php artisan queue:work`.
 
 ### Add rate limits (optional)
 
@@ -214,8 +209,6 @@ return [
 ];
 ```
 
-`config/horizon.php` — set your supervisor connection to `sqs`.
-
 ## RabbitMQ
 
 Sunset supports RabbitMQ as a peer transport to SQS and Redis. Jobs go through the same Sunset event lifecycle, show the same depth/throughput/payload data on the dashboard, and delayed dispatch routes through Sunset's `DelayedJobStore` (the same store SQS uses since v0.2.0) — so you get arbitrary-length delays even though RabbitMQ has no native delayed-message primitive.
@@ -300,7 +293,7 @@ If you set `options.queue.exchange = ''` (the empty / default exchange), no bind
 Queue::connection('rabbitmq')->later(60, $job);
 ```
 
-Delays route through Sunset's `DelayedJobStore` (Redis-backed ZSET). The auto-scheduled `sunset:sweep-delayed` command — the same one v0.2.0 added for SQS — pops due jobs back into RabbitMQ. Make sure your Laravel scheduler (`schedule:run`) is wired in cron; no consumer-side changes from the SQS setup.
+Delays route through Sunset's `DelayedJobStore` (Redis-backed ZSET). Schedule the `sunset:sweep-delayed` command in your `routes/console.php` (see [Scheduling](#scheduling)) — it pops due jobs back into RabbitMQ. Make sure `schedule:run` is wired in cron.
 
 ## Rate limiting
 
@@ -390,7 +383,7 @@ Every rejection (regardless of strategy) fires `Admnio\Sunset\Events\JobRateLimi
 
 ### Operational notes
 
-- `sunset:sweep-rate-limit-slots` is auto-scheduled every minute by Sunset's service provider. It reconciles concurrency-slot sets against TTL'd slot keys so semaphores recover automatically from killed workers. Manual run: `php artisan sunset:sweep-rate-limit-slots`.
+- `sunset:sweep-rate-limit-slots` should be scheduled every minute in your app (see [Scheduling](#scheduling)). It reconciles concurrency-slot sets against TTL'd slot keys so semaphores recover automatically from killed workers. Manual run: `php artisan sunset:sweep-rate-limit-slots`.
 - If no limits are ever registered, the gate exits via `LimitRegistry::isEmpty()` before any Redis call. Existing SQS/Redis/RabbitMQ pop paths add only one branch when rate limiting is unused — safe to ship the upgrade without declaring any limits.
 
 ## Dashboard
@@ -448,27 +441,47 @@ Auto light/dark via `prefers-color-scheme`. User can override via the header tog
 
 Full responsive. Left rail collapses on tablet; on phone, master-detail becomes single-pane with back navigation.
 
-### Standalone — no Horizon dependency
+## Scheduling
 
-As of v0.8.0, `composer require admnio/sunset` does NOT install `laravel/horizon`. If you want Horizon's dashboard side-by-side with Sunset's, install Horizon separately:
+Sunset does **not** auto-register its maintenance cron jobs — scheduling is left to your application so it stays explicit and visible. Paste this into your `routes/console.php` (Laravel 11+) or your `App\Console\Kernel::schedule()` method:
 
-```bash
-composer require laravel/horizon
+```php
+use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('sunset:sweep-delayed')->everyMinute()->withoutOverlapping();
+Schedule::command('sunset:snapshot')->everyMinute()->withoutOverlapping();
+Schedule::command('sunset:sweep-rate-limit-slots')->everyMinute()->withoutOverlapping();
+Schedule::command('sunset:sweep-worker-metrics')->everyMinute()->withoutOverlapping();
 ```
 
-Both `/horizon` and `/sunset` will work independently. If you run both `horizon` and `sunset:work` against the same queue connection, they will compete for jobs — that's your call to make.
+What each one does:
+
+| Command | What it does | When you need it |
+|---|---|---|
+| `sunset:sweep-delayed` | Pops due jobs out of Sunset's Redis-backed `DelayedJobStore` and back into SQS / RabbitMQ. | If you use long delays on SQS / RabbitMQ. |
+| `sunset:snapshot` | Captures per-queue throughput and runtime into the time-series. | For the Metrics page, Throughput stat, and Workload ETA to populate. |
+| `sunset:sweep-rate-limit-slots` | Reconciles concurrency-slot sets against TTL'd keys — semaphores recover from killed workers. | If you use rate limiting with `concurrency()`. |
+| `sunset:sweep-worker-metrics` | Prunes orphaned worker telemetry rows from crashed workers. | If you have worker telemetry enabled (default on). |
+
+Then make sure Laravel's scheduler is actually ticking — in development:
+
+```bash
+php artisan schedule:work
+```
+
+In production, wire `schedule:run` into cron once per minute:
+
+```
+* * * * * cd /path-to-app && php artisan schedule:run >> /dev/null 2>&1
+```
 
 ## Operational notes
 
 - **Long polling (default — saves money):** workers poll SQS with `WaitTimeSeconds=20` (the maximum) by default. With short-polling, every empty receive is a billable API call; long polling drastically reduces the request count on idle queues. To override, set `wait_time` (0–20) on your `sqs` queue connection in `config/queue.php` — for example `'wait_time' => 10` for faster idle-worker shutdown at the cost of more requests. `wait_time => 0` disables long polling (not recommended).
 - **Visibility timeout:** set on each SQS queue to ≥ your job `timeout` × 1.5. (The `visibility_heartbeat` config knob is reserved for a later release — currently ignored.)
 - **Extended payload cleanup:** add a lifecycle rule to your S3 bucket prefix (default `sunset-payloads/`) to clean up orphans from worker crashes.
-- **Long-delay sweep:** auto-registered via Laravel's scheduler. Ensure `schedule:run` is wired in your cron.
+- **Long-delay sweep:** add `sunset:sweep-delayed` to your scheduler (see [Scheduling](#scheduling)) and ensure `schedule:run` is wired in your cron.
 - **Octane note (auth):** `Sunset::auth(...)` stores its callback in a static property. This is intentional and Octane-safe: each Octane worker boots its service providers once (registering the gate), then reuses the callback across the worker's lifetime of requests. Don't add `Admnio\Sunset\Manager` to Octane's "flush" list — flushing the static would lose the gate. If you need request-scoped auth logic, do it inside the callback (it receives `$request` per-call); don't rely on per-request callback registration.
-
-## Migrating from `masonworkforce/horizon-sqs` v0.1.x
-
-See [`UPGRADING.md`](UPGRADING.md).
 
 ## Testing locally
 

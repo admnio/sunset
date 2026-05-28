@@ -14,7 +14,7 @@ class SunsetPauseCommandTest extends TestCase
     {
         $command = new SunsetPauseCommand();
 
-        $this->assertSame('sunset:pause', $command->getName());
+        $this->assertSame('sunset:pause-master', $command->getName());
     }
 
     public function test_command_can_be_instantiated(): void
@@ -42,7 +42,7 @@ class SunsetPauseCommandTest extends TestCase
             $artisan->resolveCommands([SunsetPauseCommand::class]);
         });
 
-        $this->artisan('sunset:pause')->assertExitCode(0);
+        $this->artisan('sunset:pause-master')->assertExitCode(0);
     }
 
     protected function tearDown(): void

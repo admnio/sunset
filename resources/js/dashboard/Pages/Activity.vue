@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import { usePolling } from '../composables/usePolling.js';
+import { eventPillStatus, eventTitle, eventSummary, eventDetail } from '../activityEvents.js';
 import Empty from '../components/Empty.vue';
 import StatusPill from '../components/StatusPill.vue';
 import FilterBar from '../components/FilterBar.vue';
@@ -49,44 +50,6 @@ const visibleEvents = computed(() => {
       JSON.stringify(e.payload ?? {}).toLowerCase().includes(q)
     ));
 });
-
-function eventPillStatus(t) {
-  if (t === 'job_failed' || t === 'unable_to_launch_process') return 'err';
-  if (t === 'job_rate_limited' || t === 'long_wait_detected' || t === 'worker_process_restarting') return 'warn';
-  if (t === 'job_completed' || t === 'master_supervisor_deployed') return 'ok';
-  if (t === 'queue_paused' || t === 'queue_resumed') return 'info';
-  return 'info';
-}
-function eventTitle(t) {
-  return (t || '').replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
-}
-function summary(e) {
-  const p = e.payload ?? {};
-  switch (e.type) {
-    case 'job_failed':
-      return `${p.job_class ?? p.job_id ?? 'unknown job'} on ${p.queue}: ${p.exception_class ?? 'exception'}${p.exception_message ? ' — ' + p.exception_message : ''}`;
-    case 'job_completed':
-      return `${p.job_class ?? p.job_id} on ${p.queue}${p.duration_ms != null ? ` (${p.duration_ms}ms)` : ''}`;
-    case 'job_rate_limited':
-      return `${p.job_class ?? p.job_id} on ${p.queue} hit ${p.limit_name} (${p.strategy}, retry after ${p.retry_after}s)`;
-    case 'job_queued':
-      return `${p.job_class ?? p.job_id} → ${p.connection}:${p.queue}`;
-    case 'worker_process_restarting':
-      return `worker pid ${p.pid ?? '?'} restarting`;
-    case 'unable_to_launch_process':
-      return `failed to launch worker pid ${p.pid ?? '?'}: ${p.command ?? '(no command)'}`;
-    case 'long_wait_detected':
-      return `${p.connection}:${p.queue} idle ${p.seconds}s`;
-    case 'master_supervisor_deployed':
-      return `master ${p.master_name} deployed`;
-    case 'queue_paused':
-      return `${p.connection}:${p.queue} paused${p.actor ? ` by ${p.actor}` : ''}`;
-    case 'queue_resumed':
-      return `${p.connection}:${p.queue} resumed${p.actor ? ` by ${p.actor}` : ''}`;
-    default:
-      return e.type;
-  }
-}
 
 function toggleExpand(id) {
   if (expanded.value.has(id)) expanded.value.delete(id);
@@ -163,7 +126,8 @@ function relTime(sec) {
           <StatusPill :status="eventPillStatus(e.type)">{{ eventTitle(e.type) }}</StatusPill>
         </span>
         <span class="body">
-          {{ summary(e) }}
+          {{ eventSummary(e) }}
+          <span v-if="eventDetail(e)" class="detail">{{ eventDetail(e) }}</span>
           <pre v-if="expanded.has(e.id)" style="margin-top: 8px; padding: 10px 12px; background: rgb(var(--bg-2)); border: 1px solid rgb(var(--border-soft)); border-radius: 6px; font-size: 11.5px; font-family: 'Geist Mono', monospace; line-height: 1.55; white-space: pre-wrap; color: rgb(var(--text-2));">{{ JSON.stringify(e.payload, null, 2) }}</pre>
         </span>
         <span class="id">{{ e.id }}</span>

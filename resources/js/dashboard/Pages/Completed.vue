@@ -80,7 +80,7 @@ function exportCsv() {
         <span class="pill neutral">{{ row.queue ?? '—' }}</span>
       </template>
       <template #runtime_ms="{ row }">
-        <span v-if="row.runtime_ms != null">{{ row.runtime_ms }}ms</span>
+        <span v-if="row.runtime_ms != null && row.runtime_ms !== false && row.runtime_ms !== ''">{{ row.runtime_ms }}ms</span>
         <span v-else style="color: rgb(var(--muted))">—</span>
       </template>
       <template #mem_peak="{ row }">

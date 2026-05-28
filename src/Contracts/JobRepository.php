@@ -15,7 +15,7 @@ interface JobRepository
 
     public function released(string $connection, string $queue, JobPayload $payload, int $delay = 0): void;
 
-    public function completed(JobPayload $payload, bool $silenced = false): void;
+    public function completed(JobPayload $payload, bool $silenced = false, ?float $runtimeMs = null): void;
 
     public function remember(string $connection, string $queue, JobPayload $payload): void;
 
@@ -38,6 +38,8 @@ interface JobRepository
     public function countCompleted(): int;
 
     public function countSilenced(): int;
+
+    public function countReserved(): int;
 
     public function totalRecent(): int;
 

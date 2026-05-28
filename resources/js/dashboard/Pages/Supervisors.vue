@@ -61,14 +61,30 @@ function formatCpu(n) {
   return `${Number(n).toFixed(1)}%`;
 }
 
-const supervisorRows = computed(() => supervisors.value.map((s) => ({
-  ...s,
-  connection: s.options?.connection ?? s.connection ?? '—',
-  queues_label: Array.isArray(s.queues) ? s.queues.join(', ')
-               : typeof s.queues === 'string' ? s.queues
-               : (s.options?.queue ?? ''),
-  procs_label: `${s.processes ?? 0} / ${s.options?.maxProcesses ?? '—'}`,
-})));
+// `processes` arrives from the repository as a `connection:queue => count`
+// map (e.g. {"database:default": 1}), so the live worker count is the sum of
+// its values. Tolerate a plain number/array too in case a transport flattens
+// it. Used for the label and the scale-button bounds.
+function procCount(p) {
+  if (p == null) return 0;
+  if (typeof p === 'number') return p;
+  if (Array.isArray(p)) return p.reduce((n, v) => n + (Number(v) || 0), 0);
+  if (typeof p === 'object') return Object.values(p).reduce((n, v) => n + (Number(v) || 0), 0);
+  return Number(p) || 0;
+}
+
+const supervisorRows = computed(() => supervisors.value.map((s) => {
+  const procs = procCount(s.processes);
+  return {
+    ...s,
+    procs,
+    connection: s.options?.connection ?? s.connection ?? '—',
+    queues_label: Array.isArray(s.queues) ? s.queues.join(', ')
+                 : typeof s.queues === 'string' ? s.queues
+                 : (s.options?.queue ?? ''),
+    procs_label: `${procs} / ${s.options?.maxProcesses ?? '—'}`,
+  };
+}));
 
 const workerRows = computed(() => workers.value.map((w) => ({
   ...w,
@@ -192,23 +208,23 @@ function statusKind(s) {
             <button
               class="btn ghost sm"
               type="button"
-              :disabled="(row.processes ?? 0) <= 1 || scaling[row.name]"
-              :title="(row.processes ?? 0) <= 1
+              :disabled="(row.procs ?? 0) <= 1 || scaling[row.name]"
+              :title="(row.procs ?? 0) <= 1
                 ? 'Pause the supervisor instead of scaling to 0 workers'
                 : 'Remove one worker without restarting the supervisor'"
-              @click="scaleSupervisor(row.name, -1, row.processes, row.options?.maxProcesses)"
+              @click="scaleSupervisor(row.name, -1, row.procs, row.options?.maxProcesses)"
             >−</button>
             <button
               class="btn ghost sm"
               type="button"
               :disabled="Number.isFinite(row.options?.maxProcesses)
-                && (row.processes ?? 0) >= (row.options?.maxProcesses ?? Infinity)
+                && (row.procs ?? 0) >= (row.options?.maxProcesses ?? Infinity)
                 || scaling[row.name]"
               :title="Number.isFinite(row.options?.maxProcesses)
-                && (row.processes ?? 0) >= (row.options?.maxProcesses ?? Infinity)
+                && (row.procs ?? 0) >= (row.options?.maxProcesses ?? Infinity)
                   ? `At configured ceiling (${row.options?.maxProcesses})`
                   : 'Add one worker without restarting the supervisor'"
-              @click="scaleSupervisor(row.name, 1, row.processes, row.options?.maxProcesses)"
+              @click="scaleSupervisor(row.name, 1, row.procs, row.options?.maxProcesses)"
             >+</button>
             <ConfirmAction
               v-if="String(row.status).toLowerCase() !== 'paused'"

@@ -4,6 +4,7 @@ namespace Admnio\Sunset\Repositories\Redis;
 
 use Admnio\Sunset\Contracts\FailedJobRepository;
 use Admnio\Sunset\JobPayload;
+use Admnio\Sunset\Support\RecordedThrowable;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 use Illuminate\Support\Collection;
@@ -33,7 +34,15 @@ class RedisFailedJobRepository implements FailedJobRepository
     public function failed(Throwable $e, string $connection, string $queue, JobPayload $payload): void
     {
         $time = (float) CarbonImmutable::now()->getPreciseTimestamp(3);
-        $exception = json_encode([
+        // A RecordedThrowable carries the original job failure's identity
+        // (class/file/line/trace); a directly-passed Throwable reports its own.
+        $exception = json_encode($e instanceof RecordedThrowable ? [
+            'class' => $e->originalClass(),
+            'message' => $e->getMessage(),
+            'file' => $e->originalFile(),
+            'line' => $e->originalLine(),
+            'trace' => $e->originalTrace(),
+        ] : [
             'class' => get_class($e),
             'message' => $e->getMessage(),
             'file' => $e->getFile(),

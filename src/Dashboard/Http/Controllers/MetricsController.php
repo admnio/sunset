@@ -17,17 +17,104 @@ use Inertia\Response as InertiaResponse;
  */
 final class MetricsController extends Controller
 {
-    public function show(Request $request, MetricsRepository $metrics): InertiaResponse|JsonResponse
-    {
-        $jobs   = $metrics->jobs();
-        $queues = $metrics->queues();
-
+    public function show(
+        Request $request,
+        MetricsRepository $metrics,
+        FailedJobRepository $failures,
+    ): InertiaResponse|JsonResponse {
         return $this->inertiaOrJson($request, 'Sunset/Metrics', [
-            'jobs'             => $jobs,
-            'queues'           => $queues,
+            'jobs'             => $metrics->jobs(),
+            'queues'           => $metrics->queues(),
             'snapshot_taken_at'=> $metrics->latestSnapshotAt(),
             'wait_times'       => $metrics->acquireWaitTimes(),
+            // Real recent trends for the hero stat-card sparklines. Empty
+            // arrays until snapshots exist (no fabricated trend on idle).
+            'throughput_series'=> $this->aggregateMetricSeries($metrics, 'throughput'),
+            'runtime_series'   => $this->aggregateMetricSeries($metrics, 'runtime'),
+            // Hero stats — derived from the snapshot series + live throughput
+            // + recent failures. Keys map directly to `heroStats` in Metrics.vue.
+            'summary'          => $this->heroSummary($metrics, $failures),
         ]);
+    }
+
+    /**
+     * Build the aggregate hero-stat row shown on /metrics. Mirrors the
+     * Overview's failure-rate math (failures / completions+failures) and
+     * sums the recent snapshot series for the per-hour totals.
+     */
+    private function heroSummary(MetricsRepository $metrics, FailedJobRepository $failures): array
+    {
+        $latestThroughput   = 0;   // latest per-queue snapshot, summed across queues
+        $hourThroughput     = 0;   // jobs completed across the snapshot history
+        $weightedRuntimeSum = 0.0; // sum of (runtime_seconds * throughput) per snapshot
+        $totalThroughputForRuntime = 0;
+        $queueRates = [];
+        $queueAvgMs = [];
+
+        foreach ($metrics->queues() as $queue) {
+            $queue = (string) $queue;
+            $snapshots = $metrics->snapshotsForQueue($queue);
+            $queueAvgMs[$queue] = (int) round($metrics->runtimeForQueue($queue) * 1000);
+
+            if ($snapshots === []) {
+                $queueRates[$queue] = '0';
+                continue;
+            }
+
+            $latest = end($snapshots);
+            $latestQueue = (int) ($latest['throughput'] ?? 0);
+            $latestThroughput += $latestQueue;
+            $queueRates[$queue] = (string) $latestQueue;
+
+            foreach ($snapshots as $snapshot) {
+                $tp = (int) ($snapshot['throughput'] ?? 0);
+                $rt = (float) ($snapshot['runtime'] ?? 0);
+                $hourThroughput += $tp;
+                if ($tp > 0 && $rt > 0) {
+                    $weightedRuntimeSum += $rt * $tp;
+                    $totalThroughputForRuntime += $tp;
+                }
+            }
+        }
+
+        $jobRates = [];
+        $jobAvgMs = [];
+        foreach ($metrics->jobs() as $job) {
+            $job = (string) $job;
+            $snapshots = $metrics->snapshotsForJob($job);
+            $latest = $snapshots !== [] ? end($snapshots) : null;
+            $jobRates[$job] = (string) (int) ($latest['throughput'] ?? 0);
+            $jobAvgMs[$job] = (int) round($metrics->runtimeForJob($job) * 1000);
+        }
+
+        $avgRuntimeMs = $totalThroughputForRuntime > 0
+            ? (int) round(($weightedRuntimeSum / $totalThroughputForRuntime) * 1000)
+            : null;
+
+        $failuresLastHour = $failures->countRecentlyFailed();
+        $completions = $this->recentCompletions($metrics);
+        $denominator = $completions + $failuresLastHour;
+        $failureRatePct = $denominator > 0
+            ? number_format(($failuresLastHour / $denominator) * 100, 2, '.', '')
+            : '—';
+
+        return [
+            'jobs_per_min'        => (string) $latestThroughput,
+            'jobs_per_hour'       => (string) $hourThroughput,
+            'avg_runtime_ms'      => $avgRuntimeMs ?? '—',
+            // Aggregate p99 requires summing per-job bucket histograms — not
+            // wired yet; the per-class ClassDetail page shows real p99s.
+            'p99_runtime_ms'      => null,
+            'failure_rate_pct'    => $failureRatePct,
+            'failures_last_hour'  => $failuresLastHour,
+            // Per-queue + per-class breakdowns consumed by the two tables.
+            // p99 and failures-per-row aren't tracked at this granularity,
+            // so those columns render '—' / 0 — honest empty cells.
+            'queue_rates'         => $queueRates,
+            'queue_avg_ms'        => $queueAvgMs,
+            'job_rates'           => $jobRates,
+            'job_avg_ms'          => $jobAvgMs,
+        ];
     }
 
     /**

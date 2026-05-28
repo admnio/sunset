@@ -13,14 +13,18 @@ const basePath = computed(() => {
   return '/' + String(p).replace(/^\/+/, '');
 });
 
+// Real failed-job backlog, shared by the middleware. Drives the Failed badge.
+const failedCount = computed(() => Number(page.props?.sunset?.failedCount ?? 0));
+
 const groups = computed(() => {
   const base = basePath.value;
+  const failed = failedCount.value;
   return [
     {
       label: 'Overview',
       items: [
         { href: base,                 label: 'Home',     icon: '#i-home' },
-        { href: `${base}/activity`,   label: 'Activity', icon: '#i-activity', badge: 12, alert: true },
+        { href: `${base}/activity`,   label: 'Activity', icon: '#i-activity' },
         { href: `${base}/workload`,   label: 'Workload', icon: '#i-list' },
         { href: `${base}/metrics`,    label: 'Metrics',  icon: '#i-chart' },
       ],
@@ -29,7 +33,7 @@ const groups = computed(() => {
       label: 'Jobs',
       items: [
         { href: `${base}/jobs/recent`,    label: 'Recent',    icon: '#i-play' },
-        { href: `${base}/jobs/failed`,    label: 'Failed',    icon: '#i-alert', badge: 5, alert: true },
+        { href: `${base}/jobs/failed`,    label: 'Failed',    icon: '#i-alert', badge: failed || null, alert: failed > 0 },
         { href: `${base}/jobs/pending`,   label: 'Pending',   icon: '#i-clock' },
         { href: `${base}/jobs/completed`, label: 'Completed', icon: '#i-check' },
         { href: `${base}/batches`,        label: 'Batches',   icon: '#i-layers' },
@@ -53,10 +57,11 @@ function isActive(href) {
   return path === target;
 }
 
-// TODO(v2-shared-props): pull version + uptime from Inertia shared props
-// once SetSunsetInertiaRoot is extended.
-const version = 'Sunset v1.3.0';
-const uptime = '8d 14h uptime · 04:22 UTC';
+// Real installed package version, shared by SetSunsetInertiaRoot.
+const version = computed(() => {
+  const v = page.props?.sunset?.version;
+  return v ? `Sunset ${v}` : 'Sunset';
+});
 </script>
 
 <template>
@@ -98,7 +103,6 @@ const uptime = '8d 14h uptime · 04:22 UTC';
         <span class="w-[5px] h-[5px] rounded-full" style="background: var(--green);"></span>
         {{ version }}
       </div>
-      <div class="font-mono mt-1" style="font-size: 10.5px; color: var(--dim);">{{ uptime }}</div>
     </div>
   </nav>
 </template>
