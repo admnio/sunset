@@ -215,6 +215,40 @@ php artisan sunset:resume                         # bring queues back
 - **Visibility timeout.** Set on each SQS queue to at least your job `timeout` × 1.5 — Sunset relies on SQS redelivery to retry jobs after worker crashes.
 - **Long polling.** Defaults to `wait_time=20` (the SQS maximum), which minimizes API calls on idle queues. Lower it on the `sqs` connection if you want faster idle-worker shutdown at the cost of more requests.
 
+### S3 payload spillover (optional)
+
+SQS rejects messages larger than 256 KB. To opt in to S3 spillover, enable it in `config/sunset.php`:
+
+```php
+'transports' => [
+    'sqs' => [
+        'extended_payload' => [
+            'enabled'        => true,
+            'bucket'         => env('SUNSET_S3_BUCKET'),
+            'prefix'         => 'sunset-payloads/',
+            'lifecycle_days' => 7,
+        ],
+    ],
+],
+```
+
+| Key | Meaning |
+|---|---|
+| `enabled` | Master switch. Default `false` — Sunset behaves exactly like stock SQS until you flip this on. |
+| `bucket` | Required when `enabled=true`. Sunset will throw `InvalidConfigurationException` at boot if it's missing. |
+| `prefix` | S3 key prefix Sunset writes under. Defaults to `sunset-payloads/`. |
+| `lifecycle_days` | Recommended retention for the S3 lifecycle rule you set on the prefix (see below). |
+
+Sunset **reuses the AWS credentials configured on your `sqs` queue connection** — no separate keys to set up. Oversized payloads land in S3, SQS receives a small reference message, and Sunset deletes the object when the job completes successfully.
+
+**Add a bucket lifecycle rule** on the `sunset-payloads/` prefix to clean up orphans left by worker crashes. `lifecycle_days` is the suggested expiration — a one-time setup, per bucket, in the S3 console or your IaC:
+
+```
+Bucket → Management → Lifecycle rules → Create rule
+  Prefix: sunset-payloads/
+  Expire current versions: 7 days
+```
+
 ## RabbitMQ notes
 
 The `vladimir-yuldashev/laravel-queue-rabbitmq` driver ships transitively — no separate require.
